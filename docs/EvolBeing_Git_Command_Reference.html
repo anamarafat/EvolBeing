@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EvolBeing — Git Command Reference</title><style>
+:root{--bg:#f5f7fb;--paper:#fff;--ink:#182438;--muted:#5c6b80;--accent:#1463a5;--line:#dce4ee;--code:#152238;--green:#13755b}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.65 system-ui,-apple-system,Segoe UI,sans-serif}main{max-width:1020px;margin:36px auto;padding:0 20px 60px}.hero{background:#152b49;color:white;border-radius:18px;padding:36px 40px}.hero h1{margin:0;font-size:2rem}.hero p{color:#d7e5f4;margin:10px 0 0}.tag{display:inline-block;border:1px solid #9cb9d6;border-radius:30px;padding:3px 12px;font-size:12px;letter-spacing:.04em}nav{background:white;border:1px solid var(--line);border-radius:12px;margin:20px 0;padding:16px 22px}nav a{display:inline-block;margin:4px 14px 4px 0;color:var(--accent);text-decoration:none}section{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:24px 28px;margin:20px 0}h2{font-size:1.32rem;margin:0 0 12px;border-bottom:1px solid var(--line);padding-bottom:10px}h3{font-size:1.02rem;margin:22px 0 8px}p{margin:8px 0 12px}.note{background:#eef5fb;border-left:4px solid var(--accent);padding:12px 16px;border-radius:6px;margin:14px 0}.warn{background:#fff4e6;border-left:4px solid #c77718;padding:12px 16px;border-radius:6px;margin:14px 0}pre{background:var(--code);color:#e5eefc;border-radius:10px;padding:18px 20px;overflow-x:auto;font:13.5px/1.75 Consolas,'Cascadia Code',monospace;white-space:pre}code{font-family:Consolas,'Cascadia Code',monospace}p code,li code{background:#eef2f7;border-radius:4px;padding:2px 5px;font-size:.92em}.c{color:#9cc8a8}.cmd{color:#f4f8ff}table{border-collapse:collapse;width:100%;font-size:14px}th,td{padding:9px 11px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}th{background:#edf3f9}ul{padding-left:22px}footer{color:var(--muted);text-align:center;padding:20px} @media print{body{background:white}main{margin:0;max-width:none}.hero{background:white;color:black;border:2px solid #aaa}.hero p{color:#444}section{break-inside:avoid}nav{display:none}pre{white-space:pre-wrap;word-break:break-word}}
+</style></head><body><main><header class="hero"><span class="tag">EVOLBEING · GEN-ALPHA</span><h1>Git Command Reference</h1><p>Practical Windows / VS Code cheat sheet: setup, commits, GitHub, branches, merges, rebases, conflicts, recovery and everyday workflows.</p></header>
+<nav><strong>Jump to:</strong><br><a href="#setup">Setup</a><a href="#inspect">Inspect</a><a href="#commit">Changes & commits</a><a href="#remote">GitHub & remotes</a><a href="#branch">Branches</a><a href="#merge">Merge</a><a href="#rebase">Rebase</a><a href="#conflicts">Conflicts</a><a href="#undo">Undo & recovery</a><a href="#stash">Stash & tags</a><a href="#workflows">Workflows</a></nav>
+<section><h2>How to use this reference</h2><p>Commands work in <strong>Git Bash, PowerShell, and Windows CMD</strong> unless otherwise indicated. Lines beginning with <code>#</code> are explanatory comments in <strong>Git Bash</strong>; copy the actual <code>git ...</code> commands into PowerShell or CMD, not the comment lines. Replace placeholder text such as <code>YOUR_USERNAME</code> and <code>feature/obj-reader</code>.</p><div class="note">Git tracks committed files; CMake/Ninja-generated <code>build/</code> files should normally be excluded with <code>.gitignore</code>. GitHub is the remote host, not the same thing as Git.</div></section>
+<section id="setup"><h2>1 · Initial setup (commands we used)</h2><pre><span class="c"># Confirm Git is installed</span>
+git --version
+
+<span class="c"># Set the author identity for commits on this computer</span>
+git config --global user.name "Your Name"
+git config --global user.email "you@example.com"
+
+<span class="c"># Verify the identity Git will record in commits</span>
+git config --global user.name
+git config --global user.email
+
+<span class="c"># Initialize the current directory as a new Git repository</span>
+git init
+
+<span class="c"># Show the repository root even if you're in a subdirectory</span>
+git rev-parse --show-toplevel
+
+<span class="c"># Return true if the current directory is in a working tree</span>
+git rev-parse --is-inside-work-tree</pre><p>Use <code>git config user.email "..."</code> (without <code>--global</code>) to override your identity only for the current repository.</p><h3>Recommended .gitignore</h3><pre><span class="c"># Save these lines in a file named .gitignore (not in the terminal)</span>
+build/
+out/
+cmake-build-*/
+.vs/
+*.obj
+*.o
+*.exe
+*.pdb</pre><p>Commit any intentionally shared VS Code workspace settings separately; do not automatically ignore the entire <code>.vscode/</code> folder if you want to share settings.</p></section>
+<section id="inspect"><h2>2 · Inspect repository state and history</h2><pre><span class="c"># Show modified, staged, untracked files and branch state</span>
+git status
+
+<span class="c"># Compact status (M = modified, ?? = untracked)</span>
+git status --short
+
+<span class="c"># Show unstaged edits to tracked files</span>
+git diff
+
+<span class="c"># Show changes already staged for the next commit</span>
+git diff --staged
+
+<span class="c"># Compact commit history, including branch decorations</span>
+git log --oneline --graph --decorate --all
+
+<span class="c"># Inspect a particular commit</span>
+git show COMMIT_HASH
+
+<span class="c"># List local branches and show the current one with *</span>
+git branch
+
+<span class="c"># List local and remote-tracking branches</span>
+git branch -a</pre></section>
+<section id="commit"><h2>3 · Stage and commit changes</h2><pre><span class="c"># Stage all additions, modifications, and deletions under current directory</span>
+git add .
+
+<span class="c"># Stage just one file</span>
+git add src/geometry/ObjReader.cpp
+
+<span class="c"># Stage changes interactively in individual hunks</span>
+git add -p
+
+<span class="c"># Commit staged changes with a descriptive message</span>
+git commit -m "Initial build - Gen-alpha"
+
+<span class="c"># Commit all tracked-file changes without separate git add
+# (does not include brand-new untracked files)</span>
+git commit -am "Fix OBJ parsing"
+
+<span class="c"># Remove a file from Git tracking but keep it on disk</span>
+git rm --cached path/to/file</pre><div class="note"><strong>Good commit messages:</strong> <code>Add OBJ mesh reader</code>, <code>Fix degenerate triangle handling</code>, <code>Report surface quality metrics</code>. Commit logically related changes together.</div></section>
+<section id="remote"><h2>4 · Connect to GitHub, push, and pull</h2><pre><span class="c"># Set the initial local branch name to main</span>
+git branch -M main
+
+<span class="c"># Link this local repo to a GitHub repo you created</span>
+git remote add origin https://github.com/YOUR_USERNAME/EvolBeing.git
+
+<span class="c"># Check remote names and URLs</span>
+git remote -v
+
+<span class="c"># Correct an existing origin URL if needed</span>
+git remote set-url origin https://github.com/YOUR_USERNAME/EvolBeing.git
+
+<span class="c"># First push: upload main and remember its upstream branch</span>
+git push -u origin main
+
+<span class="c"># Later pushes to the configured upstream</span>
+git push
+
+<span class="c"># Download remote branch information without changing local files</span>
+git fetch origin
+
+<span class="c"># Fetch then integrate upstream changes into current branch</span>
+git pull
+
+<span class="c"># Explicitly pull main from origin</span>
+git pull origin main
+
+<span class="c"># Inspect remote-tracking information</span>
+git branch -vv</pre><div class="warn"><strong>Important:</strong> If the GitHub repository already has a README/initial commit, the local and remote histories may be unrelated. Do not force-push or use <code>--allow-unrelated-histories</code> without first checking the two histories.</div></section>
+<section id="branch"><h2>5 · Branching for new features</h2><pre><span class="c"># Create and switch to a new feature branch</span>
+git switch -c feature/obj-reader
+
+<span class="c"># Switch to an existing branch</span>
+git switch main
+
+<span class="c"># Create a branch without switching to it</span>
+git branch feature/mesh-metrics
+
+<span class="c"># Push new feature branch and set upstream</span>
+git push -u origin feature/obj-reader
+
+<span class="c"># Rename the currently checked-out branch</span>
+git branch -m feature/obj-import
+
+<span class="c"># Delete a local branch already merged into current branch</span>
+git branch -d feature/obj-reader
+
+<span class="c"># Delete a remote branch (after it is merged)</span>
+git push origin --delete feature/obj-reader
+
+<span class="c"># Remove obsolete local remote-tracking references</span>
+git fetch --prune</pre><p>Use a branch per focused change: <code>feature/obj-reader</code>, <code>feature/mesh-repair</code>, <code>feature/metrics-report</code>, <code>feature/lite-gui</code>.</p></section>
+<section id="merge"><h2>6 · Merge branches</h2><pre><span class="c"># Switch to the destination branch</span>
+git switch main
+
+<span class="c"># Update main from GitHub before integrating your feature</span>
+git pull --ff-only origin main
+
+<span class="c"># Merge the completed feature into main</span>
+git merge feature/obj-reader
+
+<span class="c"># Upload the merged main branch</span>
+git push origin main
+
+<span class="c"># Optional: force a merge commit, even when fast-forward is possible</span>
+git merge --no-ff feature/obj-reader
+
+<span class="c"># Abort an in-progress merge with unresolved conflicts</span>
+git merge --abort</pre><p><strong>Merge</strong> combines branch histories and normally preserves the original commit IDs. A fast-forward merge simply advances the branch pointer when there is no divergence.</p></section>
+<section id="rebase"><h2>7 · Rebase a feature branch onto updated main</h2><pre><span class="c"># Download latest GitHub changes</span>
+git fetch origin
+
+<span class="c"># Switch to your feature branch</span>
+git switch feature/obj-reader
+
+<span class="c"># Replay feature commits on top of latest remote main</span>
+git rebase origin/main
+
+<span class="c"># If conflicts arise, edit files, then stage the resolutions</span>
+git add path/to/resolved_file.cpp
+
+<span class="c"># Continue replaying commits after resolving conflicts</span>
+git rebase --continue
+
+<span class="c"># Abort and return to the state before rebase</span>
+git rebase --abort
+
+<span class="c"># Optional: interactively clean up your last 3 commits</span>
+git rebase -i HEAD~3</pre><div class="warn"><strong>Rebase rewrites commit IDs.</strong> Prefer rebasing your own unpublished feature commits. If you've already pushed the feature branch and must update it after rebasing, <code>git push --force-with-lease</code> is safer than <code>--force</code>, but only use it on a branch you control and understand; never casually rewrite shared <code>main</code>.</div><h3>Merge vs rebase</h3><table><tr><th>Merge</th><th>Rebase</th></tr><tr><td>Combines existing histories; preserves commit IDs</td><td>Replays commits onto another base; changes commit IDs</td></tr><tr><td>Useful for integrating finished features</td><td>Useful for updating/cleaning your own feature branch</td></tr><tr><td>May create a merge commit</td><td>Usually produces a linear-looking history</td></tr></table></section>
+<section id="conflicts"><h2>8 · Resolve merge/rebase conflicts</h2><pre><span class="c"># Identify conflicting files</span>
+git status
+
+<span class="c"># Inspect conflict sections (or use VS Code Merge Editor)</span>
+git diff
+
+<span class="c"># After editing a file to the desired final contents, stage it</span>
+git add src/geometry/ObjReader.cpp
+
+<span class="c"># Finish a merge after resolving all conflicts</span>
+git commit
+
+<span class="c"># OR, if you were rebasing, continue the rebase instead</span>
+git rebase --continue
+
+<span class="c"># Check that the working tree is clean</span>
+git status</pre><div class="note">VS Code's <strong>Accept Current / Accept Incoming / Accept Both</strong> choices are conveniences, not automatic guarantees of correctness. Review the resulting code, compile, and run tests before completing the merge/rebase.</div></section>
+<section id="undo"><h2>9 · Undo and recover safely</h2><pre><span class="c"># Unstage a file, keeping its edits in the working directory</span>
+git restore --staged path/to/file
+
+<span class="c"># Discard unstaged edits in a tracked file (DESTRUCTIVE)</span>
+git restore path/to/file
+
+<span class="c"># Amend the latest commit (rewrites that commit's ID)</span>
+git commit --amend
+
+<span class="c"># Make a new commit that reverses a previous commit (safe for shared history)</span>
+git revert COMMIT_HASH
+
+<span class="c"># Move HEAD back one commit, keep all changes staged</span>
+git reset --soft HEAD~1
+
+<span class="c"># Move HEAD back one commit, keep changes unstaged</span>
+git reset --mixed HEAD~1
+
+<span class="c"># Find recent HEAD positions; useful after accidental reset/rebase</span>
+git reflog
+
+<span class="c"># Preview what untracked files would be removed</span>
+git clean -nd
+
+<span class="c"># Remove untracked files only after reviewing the preview</span>
+git clean -fd</pre><div class="warn"><strong>Avoid without a clear recovery plan:</strong> <code>git reset --hard</code>, <code>git clean -fdx</code>, and <code>git push --force</code>. They can discard work or overwrite shared history.</div></section>
+<section id="stash"><h2>10 · Stash, tags, and useful extras</h2><pre><span class="c"># Temporarily save tracked modifications and staged changes</span>
+git stash push -m "WIP OBJ reader"
+
+<span class="c"># Include untracked files in the stash too</span>
+git stash push -u -m "WIP geometry"
+
+<span class="c"># Show saved stashes</span>
+git stash list
+
+<span class="c"># Restore latest stash and remove it from stash list</span>
+git stash pop
+
+<span class="c"># Apply latest stash but retain stash entry</span>
+git stash apply
+
+<span class="c"># Create an annotated version tag</span>
+git tag -a gen-alpha -m "Gen-alpha baseline"
+
+<span class="c"># Push this tag to GitHub</span>
+git push origin gen-alpha
+
+<span class="c"># See which files Git tracks</span>
+git ls-files
+
+<span class="c"># Show why a path is ignored</span>
+git check-ignore -v build/build.ninja</pre></section>
+<section id="workflows"><h2>11 · Recommended EvolBeing workflows</h2><h3>A · Everyday change on an existing branch</h3><pre><span class="c"># Review changes before saving a commit</span>
+git status
+git diff
+
+<span class="c"># Stage and commit</span>
+git add .
+git commit -m "Improve OBJ geometry validation"
+
+<span class="c"># Push to the branch's configured remote</span>
+git push</pre><h3>B · Start and publish a new feature</h3><pre><span class="c"># Start from an up-to-date main branch</span>
+git switch main
+git pull --ff-only origin main
+
+<span class="c"># Work independently on OBJ import</span>
+git switch -c feature/obj-reader
+
+<span class="c"># After writing and testing code, commit it</span>
+git add .
+git commit -m "Add initial OBJ reader"
+
+<span class="c"># Publish feature branch; optionally open a GitHub pull request</span>
+git push -u origin feature/obj-reader</pre><h3>C · Integrate a completed feature locally</h3><pre><span class="c"># Integrate only after review/testing</span>
+git switch main
+git pull --ff-only origin main
+git merge feature/obj-reader
+git push origin main
+
+<span class="c"># Clean up the merged local branch</span>
+git branch -d feature/obj-reader</pre><h3>D · Recover from a merge in progress</h3><pre><span class="c"># See whether Git is merging and which files conflict</span>
+git status
+
+<span class="c"># Option 1: fix conflicts, stage files, and finish</span>
+git add .
+git commit
+
+<span class="c"># Option 2: cancel the merge instead</span>
+git merge --abort</pre><div class="note"><strong>Recommended habit:</strong> <code>git status</code> before and after operations; <code>git diff</code> before committing; <code>git fetch</code> before reviewing remote changes; build/test after resolving conflicts.</div></section>
+<footer>EvolBeing · Gen-alpha · Git command reference · Designed for local use in a web browser</footer></main></body></html>

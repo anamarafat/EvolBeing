@@ -1,0 +1,14 @@
+# CMake generated files
+build/
+out/
+cmake-build-*/
+
+# Visual Studio and VS Code local settings
+.vs/
+.vscode/
+
+# Compiled files
+*.obj
+*.o
+*.exe
+*.pdb

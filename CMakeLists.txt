@@ -2,7 +2,10 @@ cmake_minimum_required(VERSION 3.20)
 
 project(EvolBeing_Gen_Alpha LANGUAGES CXX)
 
-add_library(GeomCore STATIC src/SurfaceMesh.cpp)
+add_library(GeomCore STATIC 
+    src/SurfaceMesh.cpp
+    src/ObjIO.cpp
+)
 target_include_directories(GeomCore PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_features(GeomCore PUBLIC cxx_std_20)
 

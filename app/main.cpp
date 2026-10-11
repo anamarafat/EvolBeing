@@ -1,37 +1,31 @@
 #include <iostream>
 #include <numbers>
+
 #include "SurfaceMesh.hpp"
+#include "ObjIO.hpp"
 
 int main()
 {
     std::cout << "EvolBeing_Gen_Alpha \n";
     std::cout << "Pi = " << std::numbers::pi << '\n';
+    
 
-    /* Temporary Test */
-    geom::SurfaceMesh mesh;
-
-    // Add four vertices
-    auto v0 = mesh.addVertex({0.0, 0.0, 0.0});
-    auto v1 = mesh.addVertex({1.0, 0.0, 0.0});
-    auto v2 = mesh.addVertex({1.0, 1.0, 0.0});
-    auto v3 = mesh.addVertex({0.0, 1.0, 0.0});
-
-    // Create two triangles
-    mesh.addTriangle(v0, v1, v2);
-    mesh.addTriangle(v0, v2, v3);
-
-    std::cout << "EvolBeing_Gen_Alpha\n";
-    std::cout << "Vertices: " << mesh.vertexCount() << '\n';
-    std::cout << "Triangles: " << mesh.faceCount() << '\n';
-
-    // Print all vertices
-    for (const auto& vertex : mesh.vertices()) 
+    /* Temporary Test of reading .obj file */
+    try
     {
-        std::cout << vertex.x << " "
-                  << vertex.y << " "
-                  << vertex.z << '\n';
+        std::filesystem::path meshPath = "geom/obj/test.obj";
+        std::cout << "Mesh file: " << std::filesystem::absolute(meshPath) << '\n';
+        geom::SurfaceMesh mesh = geom::loadOBJ(meshPath);
+
+        std::cout << "Vertices: " << mesh.vertexCount() << '\n';
+        std::cout << "Triangles: " << mesh.faceCount() << '\n';
     }
-    /* End Temporary Test */
+    catch (const std::exception& error)
+    {
+        std::cerr << "Error: " << error.what() << '\n';
+        return 1;
+    }
+
 
     return 0;
 }

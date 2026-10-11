@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>EvolBeing — Windows C++ / Qt Build Workflow</title><style>
+:root{color-scheme:light;--ink:#182536;--muted:#526276;--accent:#1367b1;--line:#dce4ee;--bg:#f5f8fc}*{box-sizing:border-box}body{font:16px/1.65 system-ui,Segoe UI,Arial,sans-serif;color:var(--ink);max-width:1000px;margin:0 auto;padding:38px 24px 80px}h1{font-size:2.15rem;line-height:1.2}h2{margin-top:2.2rem;border-bottom:2px solid var(--line);padding-bottom:.35rem}h3{margin-top:1.4rem}p,li{max-width:90ch}.lead{color:var(--muted);font-size:1.1rem}.tag{display:inline-block;color:var(--accent);background:#e8f2fc;border-radius:30px;padding:3px 12px;font-size:.85rem;font-weight:700}.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:10px;margin:24px 0}.step{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:14px;text-align:center}.step strong{display:block}.step small{color:var(--muted)}pre{overflow:auto;background:#142235;color:#e9f1ff;border-radius:9px;padding:17px 20px;line-height:1.55;font-size:.91rem}code{font-family:Cascadia Code,Consolas,monospace}p code,li code,td code{background:#edf2f8;padding:2px 5px;border-radius:4px;font-size:.92em}table{width:100%;border-collapse:collapse;margin:14px 0}th,td{text-align:left;border-bottom:1px solid var(--line);padding:10px 12px;vertical-align:top}th{background:var(--bg)}.note{border-left:4px solid var(--accent);background:#f0f7ff;padding:12px 17px;border-radius:0 8px 8px 0}.warning{border-left-color:#bf7620;background:#fff8ed}.workflow{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:18px 24px}.workflow p{margin:8px 0;text-align:center}.arrow{color:var(--accent);font-size:1.3rem}.footer{margin-top:50px;border-top:1px solid var(--line);padding-top:18px;color:var(--muted);font-size:.9rem}@media print{body{max-width:none;padding:10mm}pre{white-space:pre-wrap;word-break:break-word}h2{break-after:avoid}.steps{grid-template-columns:repeat(5,1fr)}}
+</style></head><body>
+<span class="tag">Reference Guide · Windows · C++20 · Qt 6</span>
+<h1>EvolBeing — Complete Build &amp; Run Workflow</h1>
+<p class="lead">From a fresh Windows Command Prompt to the working Qt “Import Mesh” application, with explanations of what each tool does and when each command is necessary.</p>
+<div class="steps"><div class="step"><strong>1. MSVC x64</strong><small>Set compiler environment</small></div><div class="step"><strong>2. CMake</strong><small>Configure project</small></div><div class="step"><strong>3. Ninja + MSVC</strong><small>Compile and link</small></div><div class="step"><strong>4. Qt runtime</strong><small>Deploy DLLs and plugin</small></div><div class="step"><strong>5. Run</strong><small>Launch GUI</small></div></div>
+<h2>0. Project and installed tools</h2>
+<p><strong>Project root:</strong> <code>C:\Dev\EvolBeing\EvolBeing_Gen_alpha</code></p>
+<p><strong>Build directory:</strong> <code>build-qt</code> (a Debug build in the current configuration)</p>
+<p><strong>vcpkg installation:</strong> <code>C:\Dev\vcpkg</code></p>
+<p><strong>Tools:</strong> Visual Studio Build Tools 18 / MSVC x64, CMake, Ninja, vcpkg and Qt 6 Widgets.</p>
+<h2>1. Initialise the x64 compiler environment</h2>
+<p>Open <strong>Command Prompt (cmd.exe)</strong>. Run:</p>
+<pre><code>call "C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Auxiliary\Build\vcvars64.bat"</code></pre>
+<p>This batch file configures the <em>current terminal session</em> for 64-bit MSVC compilation. In particular, it sets paths to the compiler, linker, C++ standard-library headers and Windows SDK headers/libraries.</p>
+<table><thead><tr><th>Environment variable</th><th>Purpose</th></tr></thead><tbody><tr><td><code>PATH</code></td><td>Find tools such as <code>cl.exe</code> and <code>link.exe</code>.</td></tr><tr><td><code>INCLUDE</code></td><td>Find C++ standard-library and Windows SDK headers.</td></tr><tr><td><code>LIB</code></td><td>Find libraries used at link time.</td></tr></tbody></table>
+<p>Verify the compiler is accessible:</p><pre><code>cl</code></pre>
+<div class="note">You need to initialise a <strong>new ordinary Command Prompt</strong> each time. You can instead open an already-configured <strong>x64 Native Tools Command Prompt</strong> for Visual Studio.</div>
+<h2>2. Navigate to the project</h2>
+<pre><code>cd /d C:\Dev\EvolBeing\EvolBeing_Gen_alpha</code></pre>
+<p><code>cd</code> changes the working directory; <code>/d</code> also permits changing the drive. The dot (<code>.</code>) in the next command refers to this project directory.</p>
+<h2>3. Configure CMake</h2>
+<pre><code>cmake -S . -B build-qt -G Ninja -DCMAKE_TOOLCHAIN_FILE=C:/Dev/vcpkg/scripts/buildsystems/vcpkg.cmake</code></pre>
+<table><thead><tr><th>Argument</th><th>Meaning</th></tr></thead><tbody><tr><td><code>-S .</code></td><td>Read source configuration from the current directory.</td></tr><tr><td><code>-B build-qt</code></td><td>Store generated build files in <code>build-qt</code>.</td></tr><tr><td><code>-G Ninja</code></td><td>Use Ninja as the build executor.</td></tr><tr><td><code>-DCMAKE_TOOLCHAIN_FILE=...</code></td><td>Integrate vcpkg so CMake can discover installed dependencies, including Qt.</td></tr></tbody></table>
+<p>CMake reads <code>CMakeLists.txt</code> and determines source files, include directories, targets, library dependencies, and compiler/linker options. It writes files such as <code>build-qt/build.ninja</code> and <code>build-qt/CMakeCache.txt</code>.</p>
+<p>Example of the key project relationships (not necessarily your entire CMake file):</p>
+<pre><code>find_package(Qt6 REQUIRED COMPONENTS Widgets)
+
+add_library(GeomCore STATIC
+    src/SurfaceMesh.cpp
+    src/ObjIO.cpp
+)
+target_include_directories(GeomCore PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_compile_features(GeomCore PUBLIC cxx_std_20)
+
+add_executable(EvolBeing_Gen_Alpha
+    app/main.cpp
+    app/MainWindow.cpp
+    include/MainWindow.hpp
+)
+target_include_directories(EvolBeing_Gen_Alpha PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(EvolBeing_Gen_Alpha PRIVATE GeomCore Qt6::Widgets)</code></pre>
+<p><strong>Important:</strong> listing a header in <code>add_executable</code> does <em>not</em> automatically add its directory to the compiler search path; <code>target_include_directories</code> does that.</p>
+<div class="note">Configuration is not the normal application compilation stage. CMake may compile small test programs while detecting the compiler, but the actual project build happens next.</div>
+<h2>4. Build using Ninja and MSVC</h2>
+<pre><code>cmake --build build-qt</code></pre>
+<p>CMake invokes Ninja, which executes compiler and linker commands generated in Step 3. MSVC <code>cl.exe</code> compiles <code>.cpp</code> files to machine-code <code>.obj</code> files; the linker <code>link.exe</code> combines them and their libraries.</p>
+<div class="workflow"><p><strong>SurfaceMesh.cpp + ObjIO.cpp</strong></p><p class="arrow">↓ compile</p><p><strong>Object files → GeomCore.lib</strong> (static library)</p><p class="arrow">+</p><p><strong>main.cpp + MainWindow.cpp</strong></p><p class="arrow">↓ compile</p><p><strong>Object files + GeomCore.lib + Qt import libraries</strong></p><p class="arrow">↓ link</p><p><strong>EvolBeing_Gen_Alpha.exe</strong></p></div>
+<p><code>GeomCore</code> is statically linked into the executable as needed. Qt is dynamically linked, so the Qt DLLs must be available when the application starts.</p>
+<h3>Incremental builds</h3>
+<p>After changing only a <code>.cpp</code> file, run <code>cmake --build build-qt</code> again. Ninja normally recompiles only the affected files and relinks as needed. It will also typically trigger CMake regeneration if <code>CMakeLists.txt</code> changes.</p>
+<h2>5. Deploy the Qt runtime (current Debug build)</h2>
+<p>We previously encountered <code>Could not find the Qt platform plugin "windows"</code>. The executable needs Qt DLLs and a Windows platform plugin alongside it.</p>
+<p>For your installed vcpkg layout, copy the Debug DLLs:</p>
+<pre><code>copy C:\Dev\vcpkg\installed\x64-windows\debug\bin\Qt6Cored.dll build-qt\
+copy C:\Dev\vcpkg\installed\x64-windows\debug\bin\Qt6Guid.dll build-qt\
+copy C:\Dev\vcpkg\installed\x64-windows\debug\bin\Qt6Widgetsd.dll build-qt\</code></pre>
+<p>Create the platform plugin directory and copy the <strong>actual located</strong> plugin:</p>
+<pre><code>if not exist build-qt\platforms mkdir build-qt\platforms
+copy C:\Dev\vcpkg\installed\x64-windows\debug\Qt6\plugins\platforms\qwindowsd.dll build-qt\platforms\</code></pre>
+<p>Expected core runtime layout:</p>
+<pre><code>build-qt\
+  EvolBeing_Gen_Alpha.exe
+  Qt6Cored.dll
+  Qt6Guid.dll
+  Qt6Widgetsd.dll
+  platforms\
+    qwindowsd.dll</code></pre>
+<p>The trailing <code>d</code> means Debug. Qt uses the Windows platform plugin to integrate with native window creation and input handling. The Debug executable must use matching Debug Qt runtime components.</p>
+<div class="note warning"><strong>Deployment caveat:</strong> these files were sufficient to get your current GUI running, but additional Qt features or libraries may require further runtime dependencies. For a clean build, recopy the required files. Later, automate deployment in CMake.</div>
+<h3>Why did windeployqt fail earlier?</h3>
+<p>The deployment tool looked for <code>Qt6Widgetsd.dll</code> in the non-Debug <code>bin</code> directory, while vcpkg had placed it under <code>debug\bin</code>. The plugin was likewise under <code>debug\Qt6\plugins\platforms</code>, not <code>debug\plugins\platforms</code>. We therefore used the confirmed locations directly.</p>
+<h2>6. Run the GUI</h2>
+<pre><code>.\build-qt\EvolBeing_Gen_Alpha.exe</code></pre>
+<p>Windows loads the executable and its dependent DLLs. Qt then locates the Windows platform plugin. Your entry point creates the application and window:</p>
+<pre><code>#include "MainWindow.hpp"
+#include &lt;QApplication&gt;
+
+int main(int argc, char* argv[])
+{
+    QApplication app(argc, argv);
+    MainWindow window;
+    window.show();
+    return app.exec();
+}</code></pre>
+<p><code>QApplication</code> initialises Qt; <code>MainWindow window</code> constructs the GUI; <code>window.show()</code> displays it; and <code>app.exec()</code> starts the event loop, handling mouse clicks and other events until the application closes.</p>
+<p>The working Import Mesh workflow is: <strong>button click → file picker → <code>geom::loadOBJ()</code> → <code>SurfaceMesh</code> → displayed vertex/triangle counts</strong>.</p>
+<h2>7. Everyday workflow — copy/paste</h2>
+<p>Use these commands after opening a <strong>fresh ordinary Command Prompt</strong>, provided you have already configured <code>build-qt</code> and copied the Qt runtime files:</p>
+<pre><code>:: 1. Initialise the 64-bit compiler
+call "C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+
+:: 2. Navigate to the project
+cd /d C:\Dev\EvolBeing\EvolBeing_Gen_alpha
+
+:: 3. Build changed files
+cmake --build build-qt
+
+:: 4. Launch the GUI
+.\build-qt\EvolBeing_Gen_Alpha.exe</code></pre>
+<h3>When do I run each command?</h3>
+<table><thead><tr><th>Situation</th><th>What to run</th></tr></thead><tbody><tr><td>Fresh ordinary terminal</td><td>Initialise <code>vcvars64.bat</code>, then <code>cd</code> into the project.</td></tr><tr><td>Changed a <code>.cpp</code> or <code>.hpp</code></td><td><code>cmake --build build-qt</code> then run the executable.</td></tr><tr><td>Changed <code>CMakeLists.txt</code></td><td>Usually just build (CMake auto-regenerates); explicitly reconfigure if needed.</td></tr><tr><td>Deleted <code>build-qt</code> or configuring for the first time</td><td>Run the full CMake configure command, build, deploy Qt runtime files, then run.</td></tr><tr><td>Changed toolchain, architecture, or major build settings</td><td>Reconfigure, often using a fresh build directory.</td></tr><tr><td>Only want to run an already built app</td><td>Run the <code>.exe</code>; MSVC environment is not inherently required just to execute it if runtime dependencies are present.</td></tr></tbody></table>
+<h2>8. Quick troubleshooting</h2>
+<table><thead><tr><th>Symptom</th><th>Likely cause / action</th></tr></thead><tbody><tr><td><code>cl</code> not recognised; missing <code>&lt;array&gt;</code> or other standard headers</td><td>Initialise the x64 MSVC environment before configuring/building.</td></tr><tr><td><code>Cannot open include file: 'MainWindow.hpp'</code></td><td>Check file location and the executable's <code>target_include_directories</code>.</td></tr><tr><td>Qt includes red in VS Code, but build succeeds</td><td>Editor IntelliSense issue; configure <code>compile_commands.json</code> later. The compiler's include paths are correct.</td></tr><tr><td><code>Could not find Qt platform plugin "windows"</code></td><td>Ensure <code>build-qt\platforms\qwindowsd.dll</code> exists and the matching Debug Qt DLLs are available.</td></tr><tr><td>Need detailed Qt plugin diagnostics</td><td>Run <code>set QT_DEBUG_PLUGINS=1</code>, then launch the executable from the same terminal.</td></tr><tr><td>Build succeeds but no window appears</td><td>Check that <code>main.cpp</code> constructs <code>MainWindow</code>, calls <code>show()</code>, and enters <code>app.exec()</code>.</td></tr></tbody></table>
+<h2>9. Remember the division of responsibilities</h2>
+<table><thead><tr><th>Component</th><th>Responsibility</th></tr></thead><tbody><tr><td><strong>MSVC environment</strong></td><td>Makes the 64-bit compiler, linker and SDK available.</td></tr><tr><td><strong>CMake</strong></td><td>Reads the project description and generates build instructions.</td></tr><tr><td><strong>Ninja</strong></td><td>Schedules and executes the necessary build commands efficiently.</td></tr><tr><td><strong>MSVC compiler + linker</strong></td><td>Turns C++ into object files, libraries and an executable.</td></tr><tr><td><strong>vcpkg</strong></td><td>Installs third-party dependencies and integrates them with CMake.</td></tr><tr><td><strong>Qt runtime</strong></td><td>Supplies dynamic GUI libraries and the Windows platform plugin.</td></tr></tbody></table>
+<p class="footer">EvolBeing Gen Alpha — local reference guide. Paths reflect the current Windows project and vcpkg installation.</p>
+</body></html>

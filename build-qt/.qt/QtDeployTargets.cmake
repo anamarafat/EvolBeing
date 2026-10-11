@@ -1,0 +1,5 @@
+set(__QT_DEPLOY_TARGET_GeomCore_FILE C:/Dev/EvolBeing/EvolBeing_Gen_alpha/build-qt/GeomCore.lib)
+set(__QT_DEPLOY_TARGET_GeomCore_TYPE STATIC_LIBRARY)
+set(__QT_DEPLOY_TARGET_EvolBeing_Gen_Alpha_FILE C:/Dev/EvolBeing/EvolBeing_Gen_alpha/build-qt/EvolBeing_Gen_Alpha.exe)
+set(__QT_DEPLOY_TARGET_EvolBeing_Gen_Alpha_TYPE EXECUTABLE)
+set(__QT_DEPLOY_TARGET_EvolBeing_Gen_Alpha_RUNTIME_DLLS C:/Dev/vcpkg/installed/x64-windows/debug/bin/Qt6Widgetsd.dll;C:/Dev/vcpkg/installed/x64-windows/debug/bin/Qt6Guid.dll;C:/Dev/vcpkg/installed/x64-windows/debug/bin/Qt6Cored.dll)

@@ -7,7 +7,7 @@
 
 namespace geom
 {
-    SurfaceMesh loadOBJ(const std::filesystem::path& filename)
+    SurfaceMesh loadOBJ(const std::filesystem::path &filename)
     {
         std::ifstream file(filename);
 

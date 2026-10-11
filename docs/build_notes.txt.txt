@@ -3,5 +3,19 @@ cmake -S . -B build -G Ninja
 cmake --build build
 build\EvoBeings.exe
 
+
+Every Day Building and Running:
+:: 1. Initialise the compiler
+call "C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+
+:: 2. Go to the project
+cd /d C:\Dev\EvolBeing\EvolBeing_Gen_alpha
+
+:: 3. Build changed files
+cmake --build build-qt
+
+:: 4. Run the application
+.\build-qt\EvolBeing_Gen_Alpha.exe
+
 Location:
 C:\Dev\EvolBeing\EvolBeing_Gen_alpha

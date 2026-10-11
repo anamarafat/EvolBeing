@@ -1,31 +1,15 @@
-#include <iostream>
-#include <numbers>
+#include "MainWindow.hpp"
+#include <QApplication>
 
-#include "SurfaceMesh.hpp"
-#include "ObjIO.hpp"
-
-int main()
+int main(int argc, char* argv[])
 {
-    std::cout << "EvolBeing_Gen_Alpha \n";
-    std::cout << "Pi = " << std::numbers::pi << '\n';
-    
+    /* Code to invoke QT*/
+    QApplication app(argc, argv);
 
-    /* Temporary Test of reading .obj file */
-    try
-    {
-        std::filesystem::path meshPath = "geom/obj/test.obj";
-        std::cout << "Mesh file: " << std::filesystem::absolute(meshPath) << '\n';
-        geom::SurfaceMesh mesh = geom::loadOBJ(meshPath);
+    MainWindow window;
+    window.show();
 
-        std::cout << "Vertices: " << mesh.vertexCount() << '\n';
-        std::cout << "Triangles: " << mesh.faceCount() << '\n';
-    }
-    catch (const std::exception& error)
-    {
-        std::cerr << "Error: " << error.what() << '\n';
-        return 1;
-    }
-
+    return app.exec();
 
     return 0;
 }

@@ -1,0 +1,11 @@
+# ninja log v6
+18	329	8134320909352041	CMakeFiles/GeomCore.dir/src/SurfaceMesh.cpp.obj	46435a8ef7a32462
+28	1086	8134320909432362	CMakeFiles/EvolBeing_Gen_Alpha.dir/app/main.cpp.obj	e64c2034c5463a9d
+24	1070	8134320909407250	CMakeFiles/GeomCore.dir/src/ObjIO.cpp.obj	543b64747703e863
+1071	1109	8134320919874871	GeomCore.lib	dfc62ebd73a7646a
+1110	1418	8134320920266310	EvolBeing_Gen_Alpha.exe	c6a5747d44a60ebf
+10	1920	8134374516922118	CMakeFiles/EvolBeing_Gen_Alpha.dir/app/main.cpp.obj	e64c2034c5463a9d
+17	1972	8134374516988297	CMakeFiles/EvolBeing_Gen_Alpha.dir/app/MainWindow.cpp.obj	3020d4c8e073bdda
+1973	2641	8134374536552487	EvolBeing_Gen_Alpha.exe	40374ad850494c2a
+21	2165	8134394751186373	CMakeFiles/EvolBeing_Gen_Alpha.dir/app/main.cpp.obj	e64c2034c5463a9d
+2166	2412	8134394772622652	EvolBeing_Gen_Alpha.exe	40374ad850494c2a

@@ -1,5 +1,6 @@
 #include "MainWindow.hpp"
 #include "ObjIO.hpp"
+#include "Gui2DWindow.hpp"
 
 #include <QFileDialog>
 #include <QLabel>
@@ -18,19 +19,44 @@ MainWindow::MainWindow(QWidget* parent)
 
     auto* layout = new QVBoxLayout(this);
 
+    /* Mesh Import */
     importButton_ = new QPushButton("Import Mesh (.obj)", this);
     statusLabel_ = new QLabel("No mesh loaded", this);
+
+    
+
 
     statusLabel_->setWordWrap(true);
 
     layout->addWidget(importButton_);
     layout->addWidget(statusLabel_);
+    
 
     connect(importButton_, &QPushButton::clicked,
             this, [this]()
     {
         importMesh();
     });
+
+    /* 2d Window */
+    auto* launchGui2DButton = new QPushButton("Launch GUI2D", this);
+    layout->addWidget(launchGui2DButton);
+    
+    connect(launchGui2DButton, &QPushButton::clicked,
+            this, [this]()
+    {
+        if (!gui2DWindow_)
+        {
+            gui2DWindow_ = new Gui2DWindow(this);
+            gui2DWindow_->setWindowFlag(Qt::Window, true);
+        }
+
+        gui2DWindow_->show();
+        gui2DWindow_->raise();
+        gui2DWindow_->activateWindow();
+    });
+
+
 }
 
 void MainWindow::importMesh()

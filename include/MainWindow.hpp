@@ -7,6 +7,8 @@
 class QPushButton;
 class QLabel;
 
+class Gui2DWindow;
+
 class MainWindow : public QWidget
 {
 public:
@@ -15,8 +17,10 @@ public:
 private:
     void importMesh();
 
-    QPushButton* importButton_ = nullptr;
-    QLabel* statusLabel_ = nullptr;
+    QPushButton *importButton_ = nullptr;
+    QLabel *statusLabel_ = nullptr;
+
+    Gui2DWindow* gui2DWindow_ = nullptr;
 
     geom::SurfaceMesh mesh_;
 };

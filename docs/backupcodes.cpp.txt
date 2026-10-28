@@ -1,0 +1,43 @@
+// you can use includes, for example:
+// #include <algorithm>
+
+// you can write to stdout for debugging purposes, e.g.
+// cout << "this is a debug message" << endl;
+
+#include <climits>
+int ngapbetween1sbin(int N) 
+{
+    
+    int i;
+    int i_max = sizeof(N) * CHAR_BIT;
+    int count = 0, max_count = INT_MIN;
+    unsigned int mask; 
+    bool start = false;
+
+    /* Early Exit*/
+    if(N >= INT_MAX || N <= 4)
+        return 0;
+
+    for(i = 0; i < i_max; i++)
+    {
+        mask = 1u << i;
+        if( (N & mask) != 0)
+        {
+            if(start)
+            {
+                if(count>max_count)
+                    max_count = count;
+            }
+            count = 0;
+            start = true;
+        }
+        else 
+        {
+            if(start)
+                ++count;
+        }  
+    }
+
+    return (max_count>=0) ? max_count : 0;
+
+}

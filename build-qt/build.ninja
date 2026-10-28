@@ -65,6 +65,14 @@ build CMakeFiles\GeomCore.dir\src\ObjIO.cpp.obj: CXX_COMPILER__GeomCore_unscanne
   TARGET_COMPILE_PDB = CMakeFiles\GeomCore.dir\GeomCore.pdb
   TARGET_PDB = GeomCore.pdb
 
+build CMakeFiles\GeomCore.dir\src\CartesianGrid.cpp.obj: CXX_COMPILER__GeomCore_unscanned_Debug C$:\Dev\EvolBeing\EvolBeing_Gen_alpha\src\CartesianGrid.cpp || cmake_object_order_depends_target_GeomCore
+  FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++20 -MDd /W4 /permissive-
+  INCLUDES = -IC:\Dev\EvolBeing\EvolBeing_Gen_alpha\include
+  OBJECT_DIR = CMakeFiles\GeomCore.dir
+  OBJECT_FILE_DIR = CMakeFiles\GeomCore.dir\src
+  TARGET_COMPILE_PDB = CMakeFiles\GeomCore.dir\GeomCore.pdb
+  TARGET_PDB = GeomCore.pdb
+
 
 # =============================================================================
 # Link build statements for STATIC_LIBRARY target GeomCore
@@ -73,7 +81,7 @@ build CMakeFiles\GeomCore.dir\src\ObjIO.cpp.obj: CXX_COMPILER__GeomCore_unscanne
 #############################################
 # Link the static library GeomCore.lib
 
-build GeomCore.lib: CXX_STATIC_LIBRARY_LINKER__GeomCore_Debug CMakeFiles\GeomCore.dir\src\SurfaceMesh.cpp.obj CMakeFiles\GeomCore.dir\src\ObjIO.cpp.obj
+build GeomCore.lib: CXX_STATIC_LIBRARY_LINKER__GeomCore_Debug CMakeFiles\GeomCore.dir\src\SurfaceMesh.cpp.obj CMakeFiles\GeomCore.dir\src\ObjIO.cpp.obj CMakeFiles\GeomCore.dir\src\CartesianGrid.cpp.obj
   LANGUAGE_COMPILE_FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -MDd
   LINK_FLAGS = /machine:x64
   OBJECT_DIR = CMakeFiles\GeomCore.dir
@@ -110,6 +118,15 @@ build CMakeFiles\EvolBeing_Gen_Alpha.dir\app\MainWindow.cpp.obj: CXX_COMPILER__E
   TARGET_COMPILE_PDB = CMakeFiles\EvolBeing_Gen_Alpha.dir\
   TARGET_PDB = EvolBeing_Gen_Alpha.pdb
 
+build CMakeFiles\EvolBeing_Gen_Alpha.dir\app\Gui2DWindow.cpp.obj: CXX_COMPILER__EvolBeing_Gen_Alpha_unscanned_Debug C$:\Dev\EvolBeing\EvolBeing_Gen_alpha\app\Gui2DWindow.cpp || cmake_object_order_depends_target_EvolBeing_Gen_Alpha
+  DEFINES = -DQT_CORE_LIB -DQT_GUI_LIB -DQT_WIDGETS_LIB -DUNICODE -DWIN32 -DWIN64 -D_ENABLE_EXTENDED_ALIGNED_STORAGE -D_UNICODE -D_WIN64
+  FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++20 -MDd /W4 /permissive- -Zc:__cplusplus -permissive- -utf-8
+  INCLUDES = -IC:\Dev\EvolBeing\EvolBeing_Gen_alpha\include -external:IC:\Dev\vcpkg\installed\x64-windows\include\Qt6\QtWidgets -external:IC:\Dev\vcpkg\installed\x64-windows\include\Qt6 -external:IC:\Dev\vcpkg\installed\x64-windows\include\Qt6\QtCore -external:IC:\Dev\vcpkg\installed\x64-windows\share\Qt6\mkspecs\win32-msvc -external:IC:\Dev\vcpkg\installed\x64-windows\include\Qt6\QtGui -external:W0
+  OBJECT_DIR = CMakeFiles\EvolBeing_Gen_Alpha.dir
+  OBJECT_FILE_DIR = CMakeFiles\EvolBeing_Gen_Alpha.dir\app
+  TARGET_COMPILE_PDB = CMakeFiles\EvolBeing_Gen_Alpha.dir\
+  TARGET_PDB = EvolBeing_Gen_Alpha.pdb
+
 
 # =============================================================================
 # Link build statements for EXECUTABLE target EvolBeing_Gen_Alpha
@@ -118,7 +135,7 @@ build CMakeFiles\EvolBeing_Gen_Alpha.dir\app\MainWindow.cpp.obj: CXX_COMPILER__E
 #############################################
 # Link the executable EvolBeing_Gen_Alpha.exe
 
-build EvolBeing_Gen_Alpha.exe: CXX_EXECUTABLE_LINKER__EvolBeing_Gen_Alpha_Debug CMakeFiles\EvolBeing_Gen_Alpha.dir\app\main.cpp.obj CMakeFiles\EvolBeing_Gen_Alpha.dir\app\MainWindow.cpp.obj | GeomCore.lib C$:\Dev\vcpkg\installed\x64-windows\debug\lib\Qt6Widgetsd.lib C$:\Dev\vcpkg\installed\x64-windows\debug\lib\Qt6Guid.lib C$:\Dev\vcpkg\installed\x64-windows\debug\lib\Qt6Cored.lib || GeomCore.lib
+build EvolBeing_Gen_Alpha.exe: CXX_EXECUTABLE_LINKER__EvolBeing_Gen_Alpha_Debug CMakeFiles\EvolBeing_Gen_Alpha.dir\app\main.cpp.obj CMakeFiles\EvolBeing_Gen_Alpha.dir\app\MainWindow.cpp.obj CMakeFiles\EvolBeing_Gen_Alpha.dir\app\Gui2DWindow.cpp.obj | GeomCore.lib C$:\Dev\vcpkg\installed\x64-windows\debug\lib\Qt6Widgetsd.lib C$:\Dev\vcpkg\installed\x64-windows\debug\lib\Qt6Guid.lib C$:\Dev\vcpkg\installed\x64-windows\debug\lib\Qt6Cored.lib || GeomCore.lib
   FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -MDd
   LINK_FLAGS = /machine:x64 /debug /INCREMENTAL /subsystem:console
   LINK_LIBRARIES = GeomCore.lib  C:\Dev\vcpkg\installed\x64-windows\debug\lib\Qt6Widgetsd.lib  C:\Dev\vcpkg\installed\x64-windows\debug\lib\Qt6Guid.lib  C:\Dev\vcpkg\installed\x64-windows\debug\lib\Qt6Cored.lib  mpr.lib  userenv.lib  d3d11.lib  dxgi.lib  dxguid.lib  d3d12.lib  kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib

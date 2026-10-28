@@ -7,6 +7,7 @@ find_package(Qt6 REQUIRED COMPONENTS Widgets)
 add_library(GeomCore STATIC 
     src/SurfaceMesh.cpp
     src/ObjIO.cpp
+    src/CartesianGrid.cpp
 )
 target_include_directories(GeomCore PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_features(GeomCore PUBLIC cxx_std_20)
@@ -20,6 +21,9 @@ add_executable(EvolBeing_Gen_Alpha
             app/main.cpp
             app/MainWindow.cpp
             include/MainWindow.hpp
+
+            app/Gui2DWindow.cpp
+            include/Gui2DWindow.hpp
             )
 target_include_directories(EvolBeing_Gen_Alpha
                     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include

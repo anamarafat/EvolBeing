@@ -210,4 +210,52 @@ namespace geom
             }
         }
     }
+
+
+    Cell* CartesianGrid::cellAt(
+        std::uint32_t i,
+        std::uint32_t j) const
+    {
+        if (i >= nx_ || j >= ny_)
+            return nullptr;
+
+        std::size_t index =
+            static_cast<std::size_t>(j) * nx_ + i;
+
+        return cells_[index].get();
+    }
+
+
+    Face* CartesianGrid::verticalFaceAt(
+        std::uint32_t i,
+        std::uint32_t j) const
+    {
+        if (i > nx_ || j >= ny_)
+            return nullptr;
+
+        std::size_t index =
+            static_cast<std::size_t>(j) * (nx_ + 1) + i;
+
+        return faces_[index].get();
+    }
+
+
+    Face* CartesianGrid::horizontalFaceAt(
+        std::uint32_t i,
+        std::uint32_t j) const
+    {
+        if (i >= nx_ || j > ny_)
+            return nullptr;
+
+        std::size_t verticalFaceCount =
+            static_cast<std::size_t>(nx_ + 1) * ny_;
+
+        std::size_t index =
+            verticalFaceCount
+            + static_cast<std::size_t>(j) * nx_
+            + i;
+
+        return faces_[index].get();
+    }
+
 }

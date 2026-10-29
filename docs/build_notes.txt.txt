@@ -19,3 +19,8 @@ cmake --build build-qt
 
 Location:
 C:\Dev\EvolBeing\EvolBeing_Gen_alpha
+
+
+
+cmake -S . -B build-qt
+cmake --build build-qt

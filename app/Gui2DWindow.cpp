@@ -1,4 +1,5 @@
 #include "Gui2DWindow.hpp"
+#include "MeshGraphicsView.hpp"
 
 #include <QGraphicsScene>
 #include <QGraphicsView>
@@ -24,6 +25,9 @@
 #include <QGraphicsPathItem>
 #include <QPainterPath>
 #include <QTextEdit>
+#include <QToolBar>
+#include <QActionGroup>
+#include <QLineF>
 
 
 #include <algorithm>
@@ -67,10 +71,71 @@ Gui2DWindow::Gui2DWindow(QWidget* parent)
     leftLayout->setSpacing(5);
 
     // Graphics viewport
-    view_ = new QGraphicsView(scene_, leftPanel);
-    view_->setRenderHint(QPainter::Antialiasing);
+    view_ = new MeshGraphicsView(leftPanel);
+    view_->setScene(scene_);
+
+    auto* meshView = static_cast<MeshGraphicsView*>(view_);
+    meshView->setClickHandler(
+        [this](const QPointF& scenePos)
+        {
+            handleMeshClick(scenePos);
+        });
+
+    // Toolbar for mesh viewing and selection
+    QToolBar* meshToolbar = new QToolBar(leftPanel);
+    meshToolbar->setMovable(false);
+
+    // Fit view button
+    fitViewAction_ = meshToolbar->addAction("Fit View");
+    meshToolbar->addSeparator();
+
+    // Selection buttons
+    cellSelectAction_ = meshToolbar->addAction("Cell");
+    faceSelectAction_ = meshToolbar->addAction("Face");
+
+    // Allow buttons to remain pressed/highlighted
+    cellSelectAction_->setCheckable(true);
+    faceSelectAction_->setCheckable(true);
+
+    // Group the selection buttons
+    QActionGroup* selectionGroup = new QActionGroup(this);
+    selectionGroup->setExclusionPolicy(
+        QActionGroup::ExclusionPolicy::ExclusiveOptional);
+
+    selectionGroup->addAction(cellSelectAction_);
+    selectionGroup->addAction(faceSelectAction_);
+
+    // Fit View
+    connect(fitViewAction_, &QAction::triggered,
+            this, &Gui2DWindow::fitMeshView);
+
+    // Cell selection
+    connect(cellSelectAction_, &QAction::toggled,
+            this, [this](bool checked)
+            {
+                if (checked)
+                    selectionMode_ = SelectionMode::Cell;
+                else if (!faceSelectAction_->isChecked())
+                    selectionMode_ = SelectionMode::None;
+
+                clearSelectionHighlight();
+            });
+
+    // Face selection
+    connect(faceSelectAction_, &QAction::toggled,
+            this, [this](bool checked)
+            {
+                if (checked)
+                    selectionMode_ = SelectionMode::Face;
+                else if (!cellSelectAction_->isChecked())
+                    selectionMode_ = SelectionMode::None;
+
+                clearSelectionHighlight();
+            });
+
 
     // Viewport takes all remaining vertical space
+    leftLayout->addWidget(meshToolbar);
     leftLayout->addWidget(view_, 1);
 
     // Create output panel
@@ -332,5 +397,228 @@ void Gui2DWindow::createBoundingBox()
         QString("Face Threads    : %1").arg(grid_.faceThreadCount())
     );
     outputText_->append("====================================");
+
+}
+
+void Gui2DWindow::handleMeshClick(const QPointF& scenePos)
+{
+    if (selectionMode_ == SelectionMode::None)
+        return;
+
+    if (!boundingBoxItem_ || nx_ <= 0 || ny_ <= 0)
+        return;
+
+    // Bounding box coordinates in scene space
+    const QRectF box = boundingBoxItem_->sceneBoundingRect();
+
+    // Mouse position relative to the bounding box
+    const double x = scenePos.x() - box.left();
+    const double y = scenePos.y() - box.top();
+
+    // Cell dimensions
+    const double dx = box.width() / nx_;
+    const double dy = box.height() / ny_;
+
+    // Ignore clicks outside the mesh
+    if (x < 0.0 || y < 0.0 ||
+        x >= box.width() || y >= box.height())
+        return;
+
+    if (selectionMode_ == SelectionMode::Cell)
+    {
+        // Determine Cartesian indices
+        const int i = static_cast<int>(x / dx);
+        const int j = static_cast<int>(y / dy);
+
+        // Retrieve actual mesh cell
+        geom::Cell* cell = grid_.cellAt(i, j);
+
+        if (!cell)
+            return;
+
+        // NEW: If this cell is already selected, deselect it
+        if (selectedCell_ == cell)
+        {
+            clearSelectionHighlight();
+            outputText_->append("Cell deselected.");
+            return;
+        }
+
+        // Remove previous selection highlight
+        clearSelectionHighlight();
+
+        // NEW: Remember the newly selected cell
+        selectedCell_ = cell;
+
+        // Calculate selected cell rectangle
+        QRectF cellRect(
+            box.left() + i * dx,
+            box.top() + j * dy,
+            dx,
+            dy);
+
+        // Blue highlight
+        QPen pen(QColor(0, 120, 255));
+        pen.setWidth(2);
+        pen.setCosmetic(true);
+
+        selectedCellItem_ = scene_->addRect(
+            cellRect,
+            pen,
+            QBrush(QColor(0, 120, 255, 65)));
+
+        selectedCellItem_->setZValue(100);
+
+        // Print cell information
+        outputText_->append(
+            QString(
+                "Selected Cell\n"
+                "  ID: %1\n"
+                "  Index: (%2, %3)\n"
+                "  Faces: %4\n"
+                "  Flags: %5\n")
+                .arg(cell->id)
+                .arg(i)
+                .arg(j)
+                .arg(cell->faces.size())
+                .arg(cell->flags));
+    }
+    else if (selectionMode_ == SelectionMode::Face)
+    {
+        // Nearest vertical face indices
+        const int vi = std::clamp(
+            static_cast<int>(std::round(x / dx)), 0, nx_);
+
+        const int vj = std::clamp(
+            static_cast<int>(y / dy), 0, ny_ - 1);
+
+        // Nearest horizontal face indices
+        const int hi = std::clamp(
+            static_cast<int>(x / dx), 0, nx_ - 1);
+
+        const int hj = std::clamp(
+            static_cast<int>(std::round(y / dy)), 0, ny_);
+
+        // Distance to the nearest vertical and horizontal grid lines
+        const double distV = std::abs(x - vi * dx);
+        const double distH = std::abs(y - hj * dy);
+
+        // Convert 7 screen pixels to scene-space tolerance
+        const QPointF p0 = view_->mapToScene(QPoint(0, 0));
+        const QPointF px = view_->mapToScene(QPoint(7, 0));
+        const QPointF py = view_->mapToScene(QPoint(0, 7));
+
+        const double tolX = std::abs(px.x() - p0.x());
+        const double tolY = std::abs(py.y() - p0.y());
+
+        // Normalised distances
+        const double normV = distV / std::max(tolX, 1e-12);
+        const double normH = distH / std::max(tolY, 1e-12);
+
+        geom::Face* face = nullptr;
+        QLineF faceLine;
+
+        // Pick vertical face if it is closer
+        if (normV <= normH && normV <= 1.0)
+        {
+            face = grid_.verticalFaceAt(vi, vj);
+
+            const double fx = box.left() + vi * dx;
+            const double fy = box.top() + vj * dy;
+
+            faceLine = QLineF(fx, fy, fx, fy + dy);
+        }
+        // Otherwise try horizontal face
+        else if (normH <= 1.0)
+        {
+            face = grid_.horizontalFaceAt(hi, hj);
+
+            const double fx = box.left() + hi * dx;
+            const double fy = box.top() + hj * dy;
+
+            faceLine = QLineF(fx, fy, fx + dx, fy);
+        }
+
+        // Click wasn't close enough to a face
+        if (!face)
+        {
+            clearSelectionHighlight();
+            return;
+        }
+
+        // Clicking the same face again deselects it
+        if (selectedFace_ == face)
+        {
+            clearSelectionHighlight();
+            outputText_->append("Face deselected.");
+            return;
+        }
+
+        // Remove previous selection
+        clearSelectionHighlight();
+
+        // Remember selected mesh face
+        selectedFace_ = face;
+
+        // Draw red highlight
+        QPen pen(QColor(255, 70, 40));
+        pen.setWidth(4);
+        pen.setCosmetic(true);
+
+        selectedFaceItem_ = scene_->addLine(faceLine, pen);
+        selectedFaceItem_->setZValue(101);
+
+        // Display face information
+        outputText_->append(
+            QString(
+                "Selected Face\n"
+                "  ID: %1\n"
+                "  Owner Cell: %2\n"
+                "  Neighbour Cell: %3\n"
+                "  Flags: %4\n")
+                .arg(face->id)
+                .arg(face->owner
+                    ? QString::number(face->owner->id)
+                    : "None")
+                .arg(face->neighbor
+                    ? QString::number(face->neighbor->id)
+                    : "Boundary")
+                .arg(face->flags)
+        );
+    }
+}
+
+void Gui2DWindow::fitMeshView()
+{
+    if (!boundingBoxItem_)
+        return;
+
+    view_->fitInView(
+        scene_->sceneRect(),
+        Qt::KeepAspectRatio
+    );
+}
+
+void Gui2DWindow::clearSelectionHighlight()
+{
+     // Remove selected cell highlight
+    if (selectedCellItem_)
+    {
+        scene_->removeItem(selectedCellItem_);
+        delete selectedCellItem_;
+        selectedCellItem_ = nullptr;
+    }
+
+    // Remove selected face highlight
+    if (selectedFaceItem_)
+    {
+        scene_->removeItem(selectedFaceItem_);
+        delete selectedFaceItem_;
+        selectedFaceItem_ = nullptr;
+    }
+
+    // NEW: Forget which mesh cell was selected
+    selectedCell_ = nullptr;
+    selectedFace_ = nullptr;
 
 }

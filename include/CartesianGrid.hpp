@@ -89,6 +89,9 @@ namespace geom
         std::size_t faceCount() const { return faces_.size(); }
         std::size_t cellThreadCount() const { return cellThreads_.size(); }
         std::size_t faceThreadCount() const { return faceThreads_.size(); }
+        Cell* cellAt(std::uint32_t i, std::uint32_t j) const;
+        Face* verticalFaceAt(std::uint32_t i, std::uint32_t j) const;
+        Face* horizontalFaceAt(std::uint32_t i, std::uint32_t j) const;
 
     private:
         std::vector<std::unique_ptr<Cell>> cells_;

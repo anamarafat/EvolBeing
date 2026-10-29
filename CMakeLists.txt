@@ -21,9 +21,10 @@ add_executable(EvolBeing_Gen_Alpha
             app/main.cpp
             app/MainWindow.cpp
             include/MainWindow.hpp
-
             app/Gui2DWindow.cpp
             include/Gui2DWindow.hpp
+            app/MeshGraphicsView.cpp
+            include/MeshGraphicsView.hpp
             )
 target_include_directories(EvolBeing_Gen_Alpha
                     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include

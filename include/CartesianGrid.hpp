@@ -9,10 +9,31 @@ namespace geom
 {
     using CellID = std::uint32_t;
     using FaceID = std::uint32_t;
+    using NodeID = std::uint32_t;
 
     struct CellThread;
     struct FaceThread;
+    struct NodeThread; 
+
     struct Face;
+
+    struct Node
+    {
+        NodeID id = 0;
+
+        // Coordinates
+        double x = 0.0;
+        double y = 0.0;
+
+        // Region membership
+        NodeThread* thread = nullptr;
+
+        // Connectivity
+        std::vector<Face*> faces;
+
+        // Bitwise flags
+        std::uint32_t flags = 0;
+    };
 
     struct Cell
     {
@@ -26,6 +47,7 @@ namespace geom
 
         // Connectivity
         std::vector<Face*> faces;
+        std::vector<Node*> nodes;
 
         // Bitwise flags
         std::uint32_t flags = 0;
@@ -38,6 +60,9 @@ namespace geom
         // Adjacent cells
         Cell* owner = nullptr;
         Cell* neighbor = nullptr;
+
+        Node* inode = nullptr;
+        Node* jnode = nullptr;
 
         // Hierarchy
         FaceThread* thread = nullptr;
@@ -75,6 +100,15 @@ namespace geom
         std::uint32_t flags = 0;
     };
 
+    struct NodeThread
+    {
+        std::uint32_t id = 0;
+        RegionType type = RegionType::CartesianMesh;
+
+        std::vector<Node*> nodes;
+        std::uint32_t flags = 0;
+    };
+
     class CartesianGrid
     {
     public:
@@ -87,19 +121,25 @@ namespace geom
         // Mesh statistics
         std::size_t cellCount() const { return cells_.size(); }
         std::size_t faceCount() const { return faces_.size(); }
+        std::size_t nodeCount() const { return nodes_.size(); }
         std::size_t cellThreadCount() const { return cellThreads_.size(); }
         std::size_t faceThreadCount() const { return faceThreads_.size(); }
+        std::size_t nodeThreadCount() const { return nodeThreads_.size(); }
+        
         Cell* cellAt(std::uint32_t i, std::uint32_t j) const;
         Face* verticalFaceAt(std::uint32_t i, std::uint32_t j) const;
         Face* horizontalFaceAt(std::uint32_t i, std::uint32_t j) const;
+        Node* nodeAt(std::uint32_t i, std::uint32_t j) const;
 
     private:
         std::vector<std::unique_ptr<Cell>> cells_;
         std::vector<std::unique_ptr<Face>> faces_;
+        std::vector<std::unique_ptr<Node>> nodes_;
 
         // Independent region collections
         std::vector<std::unique_ptr<CellThread>> cellThreads_;
         std::vector<std::unique_ptr<FaceThread>> faceThreads_;
+        std::vector<std::unique_ptr<NodeThread>> nodeThreads_;
 
         std::uint32_t nx_ = 0;
         std::uint32_t ny_ = 0;

@@ -37,13 +37,18 @@ namespace geom
         const std::uint64_t nFaces =
             nVerticalFaces + nHorizontalFaces;
 
+        const std::uint64_t nNodes =
+            (static_cast<std::uint64_t>(nx) + 1ULL)
+            * (static_cast<std::uint64_t>(ny) + 1ULL);
+
+
         // IDs start at zero, so the number of entities
         // must not exceed the 32-bit addressable count.
         const std::uint64_t maxEntities =
             static_cast<std::uint64_t>(
                 std::numeric_limits<std::uint32_t>::max()) + 1ULL;
 
-        if (nCells > maxEntities || nFaces > maxEntities)
+        if (nCells > maxEntities || nFaces > maxEntities || nNodes > maxEntities)
             throw std::overflow_error(
                 "Grid exceeds 32-bit entity ID capacity.");
 
@@ -55,9 +60,11 @@ namespace geom
         // Destroy them before the mesh entities.
         cellThreads_.clear();
         faceThreads_.clear();
+        nodeThreads_.clear();
 
         cells_.clear();
         faces_.clear();
+        nodes_.clear();
 
         nx_ = nx;
         ny_ = ny;
@@ -65,6 +72,7 @@ namespace geom
 
         cells_.reserve(static_cast<std::size_t>(nCells));
         faces_.reserve(static_cast<std::size_t>(nFaces));
+        nodes_.reserve(static_cast<std::size_t>(nNodes));
 
         // ----------------------------------------
         // 3. Create Cartesian mesh threads
@@ -73,8 +81,7 @@ namespace geom
         auto cellThread = std::make_unique<CellThread>();
         cellThread->id = 0;
         cellThread->type = RegionType::CartesianMesh;
-        cellThread->cells.reserve(
-            static_cast<std::size_t>(nCells));
+        cellThread->cells.reserve(static_cast<std::size_t>(nCells));
 
         CellThread* ct = cellThread.get();
         cellThreads_.push_back(std::move(cellThread));
@@ -82,11 +89,60 @@ namespace geom
         auto faceThread = std::make_unique<FaceThread>();
         faceThread->id = 0;
         faceThread->type = RegionType::CartesianMesh;
-        faceThread->faces.reserve(
-            static_cast<std::size_t>(nFaces));
+        faceThread->faces.reserve(static_cast<std::size_t>(nFaces));
 
         FaceThread* ft = faceThread.get();
         faceThreads_.push_back(std::move(faceThread));
+
+        auto nodeThread = std::make_unique<NodeThread>();
+        nodeThread->id = 0;
+        nodeThread->type = RegionType::CartesianMesh;
+        nodeThread->nodes.reserve(static_cast<std::size_t>(nNodes));
+        NodeThread* nt = nodeThread.get();
+        nodeThreads_.push_back(std::move(nodeThread));
+
+
+        // ----------------------------------------
+        // 4. Generate nodes (NEW)
+        // ----------------------------------------
+
+        for (std::uint32_t j = 0; j <= ny_; ++j)
+        {
+            for (std::uint32_t i = 0; i <= nx_; ++i)
+            {
+                auto node = std::make_unique<Node>();
+
+                node->id = static_cast<NodeID>(
+                    static_cast<std::uint64_t>(j)
+                    * (nx_ + 1ULL) + i);
+
+                node->x = static_cast<double>(i) * cellSize_;
+                node->y = static_cast<double>(j) * cellSize_;
+
+                node->thread = nt;
+                node->flags = 0;
+
+                node->faces.reserve(4);
+
+                Node* ptr = node.get();
+
+                nodes_.push_back(std::move(node));
+                nt->nodes.push_back(ptr);
+            }
+        }
+
+        // Helper: retrieve node by Cartesian indices
+        auto getNode = [this](
+            std::uint32_t i,
+            std::uint32_t j) -> Node*
+        {
+            const std::size_t index =
+                static_cast<std::size_t>(j)
+                * (static_cast<std::size_t>(nx_) + 1)
+                + i;
+
+            return nodes_[index].get();
+        };
 
         // ----------------------------------------
         // 4. Create cells
@@ -107,10 +163,16 @@ namespace geom
                 cell->flags = 0;
 
                 cell->faces.reserve(4);
+                cell->nodes.reserve(4);
+
+                cell->nodes.push_back(getNode(i,     j));
+                cell->nodes.push_back(getNode(i + 1, j));
+                cell->nodes.push_back(getNode(i + 1, j + 1));
+                cell->nodes.push_back(getNode(i,     j + 1));
 
                 Cell* ptr = cell.get();
 
-                cells_.push_back(std::move(cell));
+                cells_.push_back(std::move(cell)); //Transfer ownership to vector
                 ct->cells.push_back(ptr);
             }
         }
@@ -164,6 +226,13 @@ namespace geom
                 if (right)
                     right->faces.push_back(ptr);
 
+                face->inode = getNode(i, j);
+                face->jnode = getNode(i, j + 1);
+
+                // Attach face to its nodes
+                face->inode->faces.push_back(ptr);
+                face->jnode->faces.push_back(ptr);
+
                 faces_.push_back(std::move(face));
                 ft->faces.push_back(ptr);
             }
@@ -204,6 +273,13 @@ namespace geom
 
                 if (lower)
                     lower->faces.push_back(ptr);
+
+                face->inode = getNode(i, j);
+                face->jnode = getNode(i + 1, j);
+                
+                // NEW: Attach face to its nodes
+                face->inode->faces.push_back(ptr);
+                face->jnode->faces.push_back(ptr);
 
                 faces_.push_back(std::move(face));
                 ft->faces.push_back(ptr);
@@ -256,6 +332,21 @@ namespace geom
             + i;
 
         return faces_[index].get();
+    }
+
+    Node* CartesianGrid::nodeAt(
+    std::uint32_t i,
+    std::uint32_t j) const
+    {
+        if (i > nx_ || j > ny_)
+            return nullptr;
+
+        const std::size_t index =
+            static_cast<std::size_t>(j)
+            * (static_cast<std::size_t>(nx_) + 1)
+            + i;
+
+        return nodes_[index].get();
     }
 
 }

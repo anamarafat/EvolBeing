@@ -3,6 +3,7 @@
 #include <QWheelEvent>
 #include <QMouseEvent>
 #include <QScrollBar>
+#include <QKeyEvent>
 #include <utility>
 
 MeshGraphicsView::MeshGraphicsView(QWidget* parent)
@@ -10,11 +11,33 @@ MeshGraphicsView::MeshGraphicsView(QWidget* parent)
 {
     setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
     setRenderHint(QPainter::Antialiasing, false);
+
+    // Receive mouse movement without pressing a button.
+    setMouseTracking(true);
+    viewport()->setMouseTracking(true);
+
+    // Receive Enter and Escape.
+    setFocusPolicy(Qt::StrongFocus);
 }
 
 void MeshGraphicsView::setClickHandler(ClickHandler handler)
 {
     clickHandler_ = std::move(handler);
+}
+
+void MeshGraphicsView::setMoveHandler(MoveHandler handler)
+{
+    moveHandler_ = std::move(handler);
+}
+
+void MeshGraphicsView::setFinishHandler(CommandHandler handler)
+{
+    finishHandler_ = std::move(handler);
+}
+
+void MeshGraphicsView::setCancelHandler(CommandHandler handler)
+{
+    cancelHandler_ = std::move(handler);
 }
 
 void MeshGraphicsView::wheelEvent(QWheelEvent* event)
@@ -31,6 +54,7 @@ void MeshGraphicsView::wheelEvent(QWheelEvent* event)
 
 void MeshGraphicsView::mousePressEvent(QMouseEvent* event)
 {
+    // Middle button: start panning
     if (event->button() == Qt::MiddleButton)
     {
         panning_ = true;
@@ -41,9 +65,23 @@ void MeshGraphicsView::mousePressEvent(QMouseEvent* event)
         return;
     }
 
-    if (event->button() == Qt::LeftButton && clickHandler_)
+    // Right button: finish drawing when enabled
+    if (event->button() == Qt::RightButton &&
+        finishHandler_)
     {
-        QPointF scenePos = mapToScene(event->pos());
+        finishHandler_();
+        event->accept();
+        return;
+    }
+
+    // Left button: selection or drawing
+    if (event->button() == Qt::LeftButton &&
+        clickHandler_)
+    {
+        setFocus();
+
+        const QPointF scenePos =
+            mapToScene(event->pos());
 
         clickHandler_(scenePos);
 
@@ -54,11 +92,14 @@ void MeshGraphicsView::mousePressEvent(QMouseEvent* event)
     QGraphicsView::mousePressEvent(event);
 }
 
+
 void MeshGraphicsView::mouseMoveEvent(QMouseEvent* event)
 {
+    // Preserve existing middle-mouse panning
     if (panning_)
     {
-        const QPoint delta = event->pos() - lastMousePos_;
+        const QPoint delta =
+            event->pos() - lastMousePos_;
 
         horizontalScrollBar()->setValue(
             horizontalScrollBar()->value() - delta.x());
@@ -72,8 +113,18 @@ void MeshGraphicsView::mouseMoveEvent(QMouseEvent* event)
         return;
     }
 
+    // Send mouse position for geometry preview
+    if (moveHandler_)
+    {
+        const QPointF scenePos =
+            mapToScene(event->pos());
+
+        moveHandler_(scenePos);
+    }
+
     QGraphicsView::mouseMoveEvent(event);
 }
+
 
 void MeshGraphicsView::mouseReleaseEvent(QMouseEvent* event)
 {
@@ -87,4 +138,30 @@ void MeshGraphicsView::mouseReleaseEvent(QMouseEvent* event)
     }
 
     QGraphicsView::mouseReleaseEvent(event);
+}
+
+void MeshGraphicsView::keyPressEvent(QKeyEvent* event)
+{
+    if (event->key() == Qt::Key_Return ||
+        event->key() == Qt::Key_Enter)
+    {
+        if (finishHandler_)
+        {
+            finishHandler_();
+            event->accept();
+            return;
+        }
+    }
+
+    if (event->key() == Qt::Key_Escape)
+    {
+        if (cancelHandler_)
+        {
+            cancelHandler_();
+            event->accept();
+            return;
+        }
+    }
+
+    QGraphicsView::keyPressEvent(event);
 }

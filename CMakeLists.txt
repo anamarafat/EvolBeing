@@ -8,6 +8,7 @@ add_library(GeomCore STATIC
     src/SurfaceMesh.cpp
     src/ObjIO.cpp
     src/CartesianGrid.cpp
+    src/Geometry2D.cpp
 )
 target_include_directories(GeomCore PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_features(GeomCore PUBLIC cxx_std_20)

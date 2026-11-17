@@ -73,6 +73,14 @@ build CMakeFiles\GeomCore.dir\src\CartesianGrid.cpp.obj: CXX_COMPILER__GeomCore_
   TARGET_COMPILE_PDB = CMakeFiles\GeomCore.dir\GeomCore.pdb
   TARGET_PDB = GeomCore.pdb
 
+build CMakeFiles\GeomCore.dir\src\Geometry2D.cpp.obj: CXX_COMPILER__GeomCore_unscanned_Debug C$:\Dev\EvolBeing\EvolBeing_Gen_alpha\src\Geometry2D.cpp || cmake_object_order_depends_target_GeomCore
+  FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++20 -MDd /W4 /permissive-
+  INCLUDES = -IC:\Dev\EvolBeing\EvolBeing_Gen_alpha\include
+  OBJECT_DIR = CMakeFiles\GeomCore.dir
+  OBJECT_FILE_DIR = CMakeFiles\GeomCore.dir\src
+  TARGET_COMPILE_PDB = CMakeFiles\GeomCore.dir\GeomCore.pdb
+  TARGET_PDB = GeomCore.pdb
+
 
 # =============================================================================
 # Link build statements for STATIC_LIBRARY target GeomCore
@@ -81,7 +89,7 @@ build CMakeFiles\GeomCore.dir\src\CartesianGrid.cpp.obj: CXX_COMPILER__GeomCore_
 #############################################
 # Link the static library GeomCore.lib
 
-build GeomCore.lib: CXX_STATIC_LIBRARY_LINKER__GeomCore_Debug CMakeFiles\GeomCore.dir\src\SurfaceMesh.cpp.obj CMakeFiles\GeomCore.dir\src\ObjIO.cpp.obj CMakeFiles\GeomCore.dir\src\CartesianGrid.cpp.obj
+build GeomCore.lib: CXX_STATIC_LIBRARY_LINKER__GeomCore_Debug CMakeFiles\GeomCore.dir\src\SurfaceMesh.cpp.obj CMakeFiles\GeomCore.dir\src\ObjIO.cpp.obj CMakeFiles\GeomCore.dir\src\CartesianGrid.cpp.obj CMakeFiles\GeomCore.dir\src\Geometry2D.cpp.obj
   LANGUAGE_COMPILE_FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -MDd
   LINK_FLAGS = /machine:x64
   OBJECT_DIR = CMakeFiles\GeomCore.dir

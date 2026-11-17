@@ -23,9 +23,6 @@ MainWindow::MainWindow(QWidget* parent)
     importButton_ = new QPushButton("Import Mesh (.obj)", this);
     statusLabel_ = new QLabel("No mesh loaded", this);
 
-    
-
-
     statusLabel_->setWordWrap(true);
 
     layout->addWidget(importButton_);
@@ -41,7 +38,7 @@ MainWindow::MainWindow(QWidget* parent)
     /* 2d Window */
     auto* launchGui2DButton = new QPushButton("Launch GUI2D", this);
     layout->addWidget(launchGui2DButton);
-    
+
     connect(launchGui2DButton, &QPushButton::clicked,
             this, [this]()
     {

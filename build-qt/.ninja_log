@@ -32,3 +32,10 @@
 27	3029	8168039406856824	CMakeFiles/EvolBeing_Gen_Alpha.dir/app/MainWindow.cpp.obj	3020d4c8e073bdda
 41	3413	8168039407009783	CMakeFiles/EvolBeing_Gen_Alpha.dir/app/Gui2DWindow.cpp.obj	a40d43b734526b5b
 3415	3771	8168039440727306	EvolBeing_Gen_Alpha.exe	2c069e99aad9603e
+49	1086	8168070149037716	CMakeFiles/Geometry2DTests.dir/tests/Geometry2DTests.cpp.obj	a46f2597912abb64
+21	1104	8168070148742305	CMakeFiles/GeomCore.dir/src/Geometry2D.cpp.obj	ae48b9e1a7c09c6c
+1105	1188	8168070159587982	GeomCore.lib	497c0b9bfc7df3e2
+1189	1438	8168070160423453	Geometry2DTests.exe	d55c60d3b326b4a2
+29	2739	8168070148837412	CMakeFiles/EvolBeing_Gen_Alpha.dir/app/MainWindow.cpp.obj	3020d4c8e073bdda
+40	3111	8168070148942538	CMakeFiles/EvolBeing_Gen_Alpha.dir/app/Gui2DWindow.cpp.obj	a40d43b734526b5b
+3113	3453	8168070179665729	EvolBeing_Gen_Alpha.exe	2c069e99aad9603e

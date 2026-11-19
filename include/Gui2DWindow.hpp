@@ -119,6 +119,8 @@ class Gui2DWindow : public QMainWindow
         QTreeWidgetItem* unassignedNode_ = nullptr;
 
         void refreshGeometryTree();
+        void showGeometryProperties();
+        void validateGeometryFromMenu();
         void createGeometryThread();
         void assignSelectedPolyline();
         void renameSelectedGeometry();

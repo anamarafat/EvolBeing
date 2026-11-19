@@ -303,6 +303,42 @@ namespace geom
         return false;
     }
 
+    bool Geometry2D::setThreadProperties(GeometryThreadID id, GeometryType type,
+                                         bool active, std::uint32_t colorRGB)
+    {
+        if (colorRGB > 0xFFFFFF) return false;
+        for (auto& group : threads_)
+            if (group.id == id)
+            {
+                group.type = type;
+                group.active = active;
+                group.colorRGB = colorRGB;
+                return true;
+            }
+        return false;
+    }
+
+    bool Geometry2D::setPolylineColorOverride(PolylineID id,
+                                                std::optional<std::uint32_t> colorRGB)
+    {
+        if (id >= polylines_.size() || polylines_[id].deleted ||
+            (colorRGB && *colorRGB > 0xFFFFFF)) return false;
+        polylines_[id].colorOverrideRGB = colorRGB;
+        return true;
+    }
+
+    std::uint32_t Geometry2D::effectivePolylineColor(PolylineID id) const noexcept
+    {
+        constexpr std::uint32_t defaultColor = 0xDC2828;
+        if (id >= polylines_.size()) return defaultColor;
+        const auto& poly = polylines_[id];
+        if (poly.colorOverrideRGB) return *poly.colorOverrideRGB;
+        if (poly.threadID)
+            for (const auto& group : threads_)
+                if (group.id == *poly.threadID) return group.colorRGB;
+        return defaultColor;
+    }
+
     const std::vector<GeometryThread2D>&
     Geometry2D::threads() const noexcept
     {

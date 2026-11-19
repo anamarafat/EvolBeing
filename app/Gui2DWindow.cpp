@@ -35,6 +35,11 @@
 #include <QLineF>
 
 #include <QInputDialog>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QLineEdit>
+#include <QComboBox>
+#include <QColorDialog>
 #include <QMessageBox>
 #include <QStringList>
 #include <QVariant>
@@ -1387,6 +1392,105 @@ void Gui2DWindow::renameSelectedGeometry()
     refreshGeometryTree();
 }
 
+void Gui2DWindow::validateGeometryFromMenu()
+{
+    const auto issues = geometry_.validate();
+    outputText_->append("========== GEOMETRY VALIDATION ==========");
+    outputText_->append(QString("Vertices: %1, Edges: %2, Polylines: %3")
+        .arg(geometry_.vertexCount()).arg(geometry_.edgeCount()).arg(geometry_.polylineCount()));
+    if (issues.empty()) outputText_->append("No geometry validation errors.");
+    for (const auto& issue : issues)
+        outputText_->append(QString::fromStdString(issue));
+    outputText_->append(QString("Validation issues: %1").arg(issues.size()));
+}
+
+void Gui2DWindow::showGeometryProperties()
+{
+    auto* item = workflowTree_->currentItem();
+    if (!item) return;
+    const QString kind = item->data(0, Qt::UserRole).toString();
+    if (kind != "group" && kind != "polyline") return;
+    const auto id = item->data(0, Qt::UserRole + 1).toUInt();
+    QDialog dialog(this);
+    dialog.setWindowTitle(kind == "group" ? "Geometry Group Properties" : "Polyline Properties");
+    QVBoxLayout layout(&dialog);
+    QFormLayout form;
+    QLineEdit name;
+    QComboBox type;
+    QCheckBox active("Enabled");
+    QCheckBox inherit("Inherit group colour");
+    QPushButton colorButton("Choose Colour...");
+    QColor chosen;
+    if (kind == "group")
+    {
+        const auto& groups = geometry_.threads();
+        const auto it = std::find_if(groups.begin(), groups.end(),
+            [id](const auto& g) { return g.id == id; });
+        if (it == groups.end()) return;
+        name.setText(QString::fromStdString(it->name));
+        const char* names[] = {"Unassigned", "Wall", "Entrance", "Exit", "Obstacle", "Region"};
+        for (const char* n : names) type.addItem(n);
+        type.setCurrentIndex(static_cast<int>(it->type));
+        active.setChecked(it->active);
+        chosen = QColor::fromRgb(it->colorRGB);
+        form.addRow("Geometry type:", &type);
+        form.addRow("Active:", &active);
+    }
+    else
+    {
+        if (id >= geometry_.polylines().size() || geometry_.polylines()[id].deleted) return;
+        const auto& poly = geometry_.polylines()[id];
+        name.setText(QString::fromStdString(poly.name));
+        inherit.setChecked(!poly.colorOverrideRGB);
+        chosen = QColor::fromRgb(geometry_.effectivePolylineColor(id));
+        form.addRow("Colour inheritance:", &inherit);
+    }
+    form.insertRow(0, "Name:", &name);
+    form.addRow("Display colour:", &colorButton);
+    auto updateSwatch = [&]() {
+        colorButton.setText(chosen.name(QColor::HexRgb).toUpper());
+        colorButton.setStyleSheet(QString("QPushButton { background-color: %1; color: %2; }")
+            .arg(chosen.name(), chosen.lightness() < 128 ? "white" : "black"));
+    };
+    updateSwatch();
+    QObject::connect(&colorButton, &QPushButton::clicked, &dialog, [&]() {
+        QColor next = QColorDialog::getColor(chosen, &dialog, "Choose geometry colour");
+        if (next.isValid()) { chosen = next; updateSwatch(); }
+    });
+    if (kind == "polyline")
+    {
+        colorButton.setEnabled(!inherit.isChecked());
+        QObject::connect(&inherit, &QCheckBox::toggled, &dialog,
+                         [&](bool checked) { colorButton.setEnabled(!checked); });
+    }
+    layout.addLayout(&form);
+    QDialogButtonBox buttons(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    layout.addWidget(&buttons);
+    QObject::connect(&buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    QObject::connect(&buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    if (dialog.exec() != QDialog::Accepted) return;
+    if (name.text().trimmed().isEmpty())
+    {
+        QMessageBox::warning(this, "Invalid name", "Name must not be empty.");
+        return;
+    }
+    if (kind == "group")
+    {
+        geometry_.renameThread(id, name.text().trimmed().toStdString());
+        geometry_.setThreadProperties(id, static_cast<geom::GeometryType>(type.currentIndex()),
+                                     active.isChecked(), chosen.rgb() & 0xFFFFFF);
+    }
+    else
+    {
+        geometry_.renamePolyline(id, name.text().trimmed().toStdString());
+        geometry_.setPolylineColorOverride(id,
+            inherit.isChecked() ? std::nullopt :
+            std::optional<std::uint32_t>(chosen.rgb() & 0xFFFFFF));
+    }
+    redrawGeometry();
+    outputText_->append("Geometry properties updated.");
+}
+
 void Gui2DWindow::showGeometryContextMenu(
     const QPoint& pos)
 {
@@ -1400,6 +1504,7 @@ void Gui2DWindow::showGeometryContextMenu(
 
     if (item == geometryRootNode_)
     {
+        menu.addAction("Validate Geometry", this, &Gui2DWindow::validateGeometryFromMenu);
         QAction* create =
             menu.addAction("New Geometry Group");
 
@@ -1420,6 +1525,8 @@ void Gui2DWindow::showGeometryContextMenu(
 
         if (kind == "polyline")
         {
+            menu.addAction("Properties...", this, &Gui2DWindow::showGeometryProperties);
+            menu.addSeparator();
             menu.addAction(
                 "Assign to Group",
                 this,
@@ -1439,6 +1546,8 @@ void Gui2DWindow::showGeometryContextMenu(
         }
         else if (kind == "group")
         {
+            menu.addAction("Properties...", this, &Gui2DWindow::showGeometryProperties);
+            menu.addSeparator();
             menu.addAction(
                 "Rename Group",
                 this,
@@ -1747,7 +1856,9 @@ void Gui2DWindow::redrawGeometry()
             const auto& e = geometry_.edges().at(id);
             const auto& a = geometry_.vertices().at(e.vertex0);
             const auto& b = geometry_.vertices().at(e.vertex1);
-            auto* line = scene_->addLine(a.x,a.y,b.x,b.y,edgePen);
+            QPen polyPen(edgePen);
+            polyPen.setColor(QColor::fromRgb(geometry_.effectivePolylineColor(poly.id)));
+            auto* line = scene_->addLine(a.x,a.y,b.x,b.y,polyPen);
             line->setZValue(105);
             geometryItems_.push_back(line);
             polylineGraphics_[poly.id].push_back(line);

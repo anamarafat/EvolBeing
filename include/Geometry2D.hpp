@@ -29,6 +29,8 @@ namespace geom
         GeometryThreadID id = 0;
         std::string name;
         GeometryType type = GeometryType::Unassigned;
+        bool active = true;
+        std::uint32_t colorRGB = 0xDC2828;
         std::vector<PolylineID> polylines;
     };
 
@@ -67,6 +69,7 @@ namespace geom
         std::vector<GeometryEdgeID> edges;
         std::string name;
         std::optional<GeometryThreadID> threadID;
+        std::optional<std::uint32_t> colorOverrideRGB;
         bool closed = false;
         bool deleted = false; 
     };
@@ -116,6 +119,10 @@ namespace geom
         bool renamePolyline(
             PolylineID polylineID,
             const std::string& name);
+
+        bool setThreadProperties(GeometryThreadID id, GeometryType type, bool active, std::uint32_t colorRGB);
+        bool setPolylineColorOverride(PolylineID id, std::optional<std::uint32_t> colorRGB);
+        std::uint32_t effectivePolylineColor(PolylineID id) const noexcept;
 
         bool renameThread(
             GeometryThreadID threadID,

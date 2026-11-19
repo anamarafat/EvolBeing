@@ -31,6 +31,7 @@ namespace geom
         GeometryType type = GeometryType::Unassigned;
         bool active = true;
         std::uint32_t colorRGB = 0xDC2828;
+        double thickness = 1.0;
         std::vector<PolylineID> polylines;
     };
 
@@ -70,6 +71,7 @@ namespace geom
         std::string name;
         std::optional<GeometryThreadID> threadID;
         std::optional<std::uint32_t> colorOverrideRGB;
+        std::optional<double> thicknessOverride;
         bool closed = false;
         bool deleted = false; 
     };
@@ -121,6 +123,13 @@ namespace geom
             const std::string& name);
 
         bool setThreadProperties(GeometryThreadID id, GeometryType type, bool active, std::uint32_t colorRGB);
+        bool setThreadThickness(GeometryThreadID id, double thickness);
+        bool setPolylineThicknessOverride(PolylineID id, std::optional<double> thickness);
+        double effectivePolylineThickness(PolylineID id) const noexcept;
+        bool importState(std::vector<GeometryVertex2D> vertices,
+                         std::vector<GeometryEdge2D> edges,
+                         std::vector<Polyline2D> polylines,
+                         std::vector<GeometryThread2D> threads);
         bool setPolylineColorOverride(PolylineID id, std::optional<std::uint32_t> colorRGB);
         std::uint32_t effectivePolylineColor(PolylineID id) const noexcept;
 

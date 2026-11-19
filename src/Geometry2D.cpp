@@ -1,5 +1,6 @@
 
 #include "Geometry2D.hpp"
+#include <unordered_set>
 
 #include <cmath>
 #include <limits>
@@ -316,6 +317,77 @@ namespace geom
                 return true;
             }
         return false;
+    }
+
+    bool Geometry2D::setThreadThickness(GeometryThreadID id, double value)
+    {
+        if (!std::isfinite(value) || value < 0.1 || value > 50.0) return false;
+        for (auto& g : threads_) if (g.id == id) { g.thickness = value; return true; }
+        return false;
+    }
+
+    bool Geometry2D::setPolylineThicknessOverride(PolylineID id, std::optional<double> value)
+    {
+        if (id >= polylines_.size() || polylines_[id].deleted ||
+            (value && (!std::isfinite(*value) || *value < 0.1 || *value > 50.0))) return false;
+        polylines_[id].thicknessOverride = value;
+        return true;
+    }
+
+    double Geometry2D::effectivePolylineThickness(PolylineID id) const noexcept
+    {
+        if (id >= polylines_.size()) return 1.0;
+        const auto& poly = polylines_[id];
+        if (poly.thicknessOverride) return *poly.thicknessOverride;
+        if (poly.threadID)
+            for (const auto& g : threads_) if (g.id == *poly.threadID) return g.thickness;
+        return 1.0;
+    }
+
+    bool Geometry2D::importState(std::vector<GeometryVertex2D> vertices,
+                                  std::vector<GeometryEdge2D> edges,
+                                  std::vector<Polyline2D> polylines,
+                                  std::vector<GeometryThread2D> threads)
+    {
+        for (std::size_t i=0; i<vertices.size(); ++i)
+            if (vertices[i].id != i || !std::isfinite(vertices[i].x) || !std::isfinite(vertices[i].y)) return false;
+        for (std::size_t i=0; i<edges.size(); ++i)
+            if (edges[i].id != i || edges[i].vertex0 >= vertices.size() ||
+                edges[i].vertex1 >= vertices.size() ||
+                (!edges[i].deleted && (edges[i].vertex0 == edges[i].vertex1 ||
+                vertices[edges[i].vertex0].deleted || vertices[edges[i].vertex1].deleted))) return false;
+        std::unordered_set<GeometryThreadID> ids;
+        GeometryThreadID next = 0;
+        for (const auto& g : threads) {
+            if (!ids.insert(g.id).second || g.colorRGB > 0xFFFFFF ||
+                !std::isfinite(g.thickness) || g.thickness < 0.1 || g.thickness > 50.0 ||
+                g.type > GeometryType::Region || g.id == std::numeric_limits<GeometryThreadID>::max()) return false;
+            next = std::max(next, static_cast<GeometryThreadID>(g.id+1));
+        }
+        for (std::size_t i=0; i<polylines.size(); ++i) {
+            const auto& poly=polylines[i];
+            if (poly.id != i || (poly.threadID && !ids.contains(*poly.threadID)) ||
+                (poly.colorOverrideRGB && *poly.colorOverrideRGB > 0xFFFFFF) ||
+                (poly.thicknessOverride && (!std::isfinite(*poly.thicknessOverride) ||
+                 *poly.thicknessOverride < 0.1 || *poly.thicknessOverride > 50.0))) return false;
+            for (auto v : poly.vertices) if (v >= vertices.size() || (!poly.deleted && vertices[v].deleted)) return false;
+            for (auto e : poly.edges) if (e >= edges.size() || (!poly.deleted && edges[e].deleted)) return false;
+            if (!poly.deleted) {
+                if (poly.vertices.size() < 2 || poly.edges.size() != poly.vertices.size() - (poly.closed ? 0 : 1)) return false;
+                for (std::size_t j=0; j<poly.edges.size(); ++j) {
+                    const auto& edge=edges[poly.edges[j]];
+                    auto a=poly.vertices[j], b=poly.vertices[(j+1)%poly.vertices.size()];
+                    if (!((edge.vertex0==a && edge.vertex1==b) || (edge.vertex1==a && edge.vertex0==b))) return false;
+                }
+            }
+        }
+        for (const auto& g : threads)
+            for (auto id : g.polylines)
+                if (id >= polylines.size() || polylines[id].deleted || polylines[id].threadID != g.id) return false;
+        vertices_ = std::move(vertices); edges_ = std::move(edges);
+        polylines_ = std::move(polylines); threads_ = std::move(threads);
+        nextThreadID_ = next;
+        return true;
     }
 
     bool Geometry2D::setPolylineColorOverride(PolylineID id,

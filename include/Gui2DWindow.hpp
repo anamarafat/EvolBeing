@@ -31,6 +31,17 @@ class Gui2DWindow : public QMainWindow
     private:
         geom::CartesianGrid grid_;
         geom::Geometry2D geometry_;
+        std::vector<geom::Geometry2D> undoHistory_, redoHistory_;
+        void checkpoint();
+        void undoGeometry();
+        void redoGeometry();
+        void saveGeometry();
+        void loadGeometry();
+        void scaleGeometry();
+        void connectNodesClick(const QPointF& pos);
+        std::optional<geom::GeometryVertexID> connectStart_;
+        QString geometryFilePath_;
+
 
         // 2D canvas
         QGraphicsScene* scene_ = nullptr;
@@ -58,7 +69,7 @@ class Gui2DWindow : public QMainWindow
             Cell,
             Face,
             Node,
-            DrawLine, DrawPolyline, DrawEdge, DrawVertex, GeometryVertex, GeometryEdge, GeometryPolyline
+            DrawLine, DrawPolyline, DrawEdge, DrawVertex, ConnectNodes, GeometryVertex, GeometryEdge, GeometryPolyline
         };
 
         SelectionMode selectionMode_ = SelectionMode::None;

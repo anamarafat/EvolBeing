@@ -6,3 +6,6 @@ set(__QT_DEPLOY_TARGET_EvolBeing_Gen_Alpha_RUNTIME_DLLS C:/Dev/vcpkg/installed/x
 set(__QT_DEPLOY_TARGET_Geometry2DTests_FILE C:/Dev/EvolBeing/EvolBeing_Gen_alpha/build-qt/Geometry2DTests.exe)
 set(__QT_DEPLOY_TARGET_Geometry2DTests_TYPE EXECUTABLE)
 set(__QT_DEPLOY_TARGET_Geometry2DTests_RUNTIME_DLLS )
+set(__QT_DEPLOY_TARGET_Geometry2DStage4Tests_FILE C:/Dev/EvolBeing/EvolBeing_Gen_alpha/build-qt/Geometry2DStage4Tests.exe)
+set(__QT_DEPLOY_TARGET_Geometry2DStage4Tests_TYPE EXECUTABLE)
+set(__QT_DEPLOY_TARGET_Geometry2DStage4Tests_RUNTIME_DLLS )

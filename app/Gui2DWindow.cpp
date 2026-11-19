@@ -49,6 +49,17 @@
 #include <limits>
 
 #include <QMenu>
+#include <QMenuBar>
+#include <QKeySequence>
+#include <stdexcept>
+#include <QFileDialog>
+#include <QFile>
+#include <QSaveFile>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
+#include <QJsonParseError>
+#include <QSignalBlocker>
 #include <QGraphicsLineItem>
 #include <QGraphicsEllipseItem>
 
@@ -118,13 +129,38 @@ Gui2DWindow::Gui2DWindow(QWidget* parent)
             cancelDrawing();
         });
 
+    // Stage 4: independent single-row menu, mesh and geometry toolbars.
+    auto* fileMenu = menuBar()->addMenu("File");
+    fileMenu->addAction("Load Geometry...", this, &Gui2DWindow::loadGeometry);
+    fileMenu->addAction("Save Geometry...", this, &Gui2DWindow::saveGeometry);
+    auto* editMenu = menuBar()->addMenu("Edit");
+    editMenu->addAction("Scale Geometry...", this, &Gui2DWindow::scaleGeometry);
+    auto* undoAction = editMenu->addAction("Undo", this, &Gui2DWindow::undoGeometry);
+    undoAction->setShortcut(QKeySequence::Undo);
+    auto* redoAction = editMenu->addAction("Redo", this, &Gui2DWindow::redoGeometry);
+    redoAction->setShortcut(QKeySequence::Redo);
+
     // Toolbar for mesh viewing and selection
     QToolBar* meshToolbar = new QToolBar(leftPanel);
     meshToolbar->setMovable(false);
 
+    meshToolbar->setFloatable(false);
+    meshToolbar->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    meshToolbar->addAction("Generate Mesh")->setEnabled(false); // placeholder
+    auto* showMeshAction = meshToolbar->addAction("Show Mesh");
+    showMeshAction->setObjectName("showMeshVisibility");
+    showMeshAction->setCheckable(true);
+    showMeshAction->setChecked(true);
+    connect(showMeshAction, &QAction::toggled, this, [this](bool visible) {
+        if (gridItem_) gridItem_->setVisible(visible);
+    });
     // Fit view button
     fitViewAction_ = meshToolbar->addAction("Fit View");
-    infoAction_ = meshToolbar->addAction("Info");
+    QToolBar* geometryToolbar = new QToolBar(leftPanel);
+    geometryToolbar->setMovable(false);
+    geometryToolbar->setFloatable(false);
+    geometryToolbar->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    infoAction_ = geometryToolbar->addAction("Info");
     meshToolbar->addSeparator();
 
     // Selection buttons
@@ -133,26 +169,27 @@ Gui2DWindow::Gui2DWindow(QWidget* parent)
     nodeSelectAction_ = meshToolbar->addAction("Node");
 
     // Geometry drawing button
-    meshToolbar->addSeparator();
-    drawLineAction_ = meshToolbar->addAction("Draw Line");
-    drawPolylineAction_ = meshToolbar->addAction("Polyline");
-    drawEdgeAction_ = meshToolbar->addAction("Draw Edge");
-    drawVertexAction_ = meshToolbar->addAction("Draw Vertex");
-    meshToolbar->addSeparator();
-    selectGeometryVertexAction_ = meshToolbar->addAction("Select Vertex");
-    selectGeometryEdgeAction_ = meshToolbar->addAction("Select Edge");
-    selectGeometryPolylineAction_ = meshToolbar->addAction("Select Polyline");
-    meshToolbar->addSeparator();
-    auto* snapButton = new QToolButton(meshToolbar);
+    geometryToolbar->addSeparator();
+    drawLineAction_ = geometryToolbar->addAction("Draw Line");
+    drawPolylineAction_ = geometryToolbar->addAction("Polyline");
+    drawEdgeAction_ = geometryToolbar->addAction("Draw Edge");
+    drawVertexAction_ = geometryToolbar->addAction("Draw Vertex");
+    geometryToolbar->addSeparator();
+    selectGeometryVertexAction_ = geometryToolbar->addAction("Select Vertex");
+    selectGeometryEdgeAction_ = geometryToolbar->addAction("Select Edge");
+    selectGeometryPolylineAction_ = geometryToolbar->addAction("Select Polyline");
+    geometryToolbar->addSeparator();
+    auto* connectNodesAction = geometryToolbar->addAction("Connect Nodes");
+    auto* snapButton = new QToolButton(geometryToolbar);
     snapButton->setText("Snap");
     snapButton->setPopupMode(QToolButton::MenuButtonPopup);
     auto* snapMenu = new QMenu(snapButton);
     snapAllAction_ = snapMenu->addAction("Snap All geometry vertices");
     snapAllAction_->setCheckable(true);
     snapButton->setMenu(snapMenu);
-    meshToolbar->addWidget(snapButton);
+    geometryToolbar->addWidget(snapButton);
     connect(snapButton, &QToolButton::clicked, this, &Gui2DWindow::applySnap);
-    auto* closeButton = new QToolButton(meshToolbar);
+    auto* closeButton = new QToolButton(geometryToolbar);
     closeButton->setText("Close Polyline");
     closeButton->setPopupMode(QToolButton::MenuButtonPopup);
     auto* closeMenu = new QMenu(closeButton);
@@ -160,9 +197,9 @@ Gui2DWindow::Gui2DWindow(QWidget* parent)
     newEdgeAction_->setCheckable(true);
     newEdgeAction_->setChecked(true);
     closeButton->setMenu(closeMenu);
-    meshToolbar->addWidget(closeButton);
+    geometryToolbar->addWidget(closeButton);
     connect(closeButton, &QToolButton::clicked, this, &Gui2DWindow::closeActivePolyline);
-    auto* deleteEntityAction = meshToolbar->addAction("Delete Entity");
+    auto* deleteEntityAction = geometryToolbar->addAction("Delete Entity");
     connect(deleteEntityAction, &QAction::triggered, this, &Gui2DWindow::deleteSelectedEntity);
     connect(infoAction_, &QAction::triggered, this, &Gui2DWindow::printSelectedInfo);
 
@@ -183,6 +220,8 @@ Gui2DWindow::Gui2DWindow(QWidget* parent)
     selectionGroup->addAction(cellSelectAction_);
     selectionGroup->addAction(faceSelectAction_);
     selectionGroup->addAction(nodeSelectAction_);
+    connectNodesAction->setCheckable(true);
+    selectionGroup->addAction(connectNodesAction);
     selectionGroup->addAction(drawLineAction_);
     for (auto* action : {drawPolylineAction_, drawEdgeAction_, drawVertexAction_,
                          selectGeometryVertexAction_, selectGeometryEdgeAction_, selectGeometryPolylineAction_})
@@ -229,6 +268,7 @@ Gui2DWindow::Gui2DWindow(QWidget* parent)
     connectTool(cellSelectAction_, SelectionMode::Cell);
     connectTool(faceSelectAction_, SelectionMode::Face);
     connectTool(nodeSelectAction_, SelectionMode::Node);
+    connectTool(connectNodesAction, SelectionMode::ConnectNodes);
     connectTool(drawLineAction_, SelectionMode::DrawLine);
     connectTool(drawPolylineAction_, SelectionMode::DrawPolyline);
     connectTool(drawEdgeAction_, SelectionMode::DrawEdge);
@@ -239,6 +279,7 @@ Gui2DWindow::Gui2DWindow(QWidget* parent)
 
     // Viewport takes all remaining vertical space
     leftLayout->addWidget(meshToolbar);
+    leftLayout->addWidget(geometryToolbar);
     leftLayout->addWidget(view_, 1);
 
     // Create output panel
@@ -496,6 +537,8 @@ void Gui2DWindow::createBoundingBox()
     );
 
     gridItem_->setZValue(-1);
+    // Preserve mesh visibility when rebuilding the grid.
+    if (auto* a = findChild<QAction*>("showMeshVisibility")) gridItem_->setVisible(a->isChecked());
     redrawGeometry();
 
     // Margin around bounding box
@@ -560,6 +603,10 @@ void Gui2DWindow::createBoundingBox()
 
 void Gui2DWindow::handleMeshClick(const QPointF& scenePos)
 {
+    if (selectionMode_ == SelectionMode::ConnectNodes) {
+        connectNodesClick(scenePos);
+        return;
+    }
     // Route clicks to geometry drawing
     if (selectionMode_ == SelectionMode::DrawLine || selectionMode_ == SelectionMode::DrawPolyline ||
         selectionMode_ == SelectionMode::DrawEdge || selectionMode_ == SelectionMode::DrawVertex)
@@ -941,6 +988,7 @@ void Gui2DWindow::handleDrawingClick(
     // Standalone vertex: intentionally not added to a polyline.
     if (selectionMode_ == SelectionMode::DrawVertex)
     {
+        checkpoint();
         const auto id = geometry_.addVertex(scenePos.x(), scenePos.y());
         redrawGeometry();
         outputText_->append(QString("Created vertex %1").arg(id));
@@ -949,6 +997,7 @@ void Gui2DWindow::handleDrawingClick(
     // Start a new polyline
     if (!activePolyline_)
     {
+        checkpoint();
         activePolyline_ = geometry_.createPolyline();
     }
 
@@ -972,6 +1021,7 @@ void Gui2DWindow::handleDrawingClick(
     }
 
     // Add a vertex to the geometry data model
+    if (activePolyline_ && !geometry_.polylines().at(*activePolyline_).vertices.empty()) checkpoint();
     const auto vertexID = geometry_.addVertex(
         scenePos.x(), scenePos.y());
 
@@ -1276,6 +1326,7 @@ void Gui2DWindow::createGeometryThread()
     if (!ok || name.trimmed().isEmpty())
         return;
 
+    checkpoint();
     const auto id =
         geometry_.createThread(name.trimmed().toStdString());
 
@@ -1337,6 +1388,7 @@ void Gui2DWindow::assignSelectedPolyline()
             static_cast<std::size_t>(index - 1)).id;
     }
 
+    checkpoint();
     if (geometry_.assignPolylineToThread(polylineID, target))
     {
         refreshGeometryTree();
@@ -1380,11 +1432,13 @@ void Gui2DWindow::renameSelectedGeometry()
 
     if (kind == "group")
     {
+        checkpoint();
         geometry_.renameThread(
             id, name.trimmed().toStdString());
     }
     else
     {
+        checkpoint();
         geometry_.renamePolyline(
             id, name.trimmed().toStdString());
     }
@@ -1419,6 +1473,11 @@ void Gui2DWindow::showGeometryProperties()
     QComboBox type;
     QCheckBox active("Enabled");
     QCheckBox inherit("Inherit group colour");
+    QCheckBox inheritThickness("Inherit group thickness");
+    QDoubleSpinBox thickness;
+    thickness.setRange(0.1, 50.0);
+    thickness.setSingleStep(0.5);
+    thickness.setDecimals(1);
     QPushButton colorButton("Choose Colour...");
     QColor chosen;
     if (kind == "group")
@@ -1433,6 +1492,7 @@ void Gui2DWindow::showGeometryProperties()
         type.setCurrentIndex(static_cast<int>(it->type));
         active.setChecked(it->active);
         chosen = QColor::fromRgb(it->colorRGB);
+        thickness.setValue(it->thickness);
         form.addRow("Geometry type:", &type);
         form.addRow("Active:", &active);
     }
@@ -1443,10 +1503,14 @@ void Gui2DWindow::showGeometryProperties()
         name.setText(QString::fromStdString(poly.name));
         inherit.setChecked(!poly.colorOverrideRGB);
         chosen = QColor::fromRgb(geometry_.effectivePolylineColor(id));
+        inheritThickness.setChecked(!poly.thicknessOverride);
+        thickness.setValue(geometry_.effectivePolylineThickness(id));
+        form.addRow("Thickness inheritance:", &inheritThickness);
         form.addRow("Colour inheritance:", &inherit);
     }
     form.insertRow(0, "Name:", &name);
     form.addRow("Display colour:", &colorButton);
+    form.addRow("Line thickness (x):", &thickness);
     auto updateSwatch = [&]() {
         colorButton.setText(chosen.name(QColor::HexRgb).toUpper());
         colorButton.setStyleSheet(QString("QPushButton { background-color: %1; color: %2; }")
@@ -1460,6 +1524,9 @@ void Gui2DWindow::showGeometryProperties()
     if (kind == "polyline")
     {
         colorButton.setEnabled(!inherit.isChecked());
+        thickness.setEnabled(!inheritThickness.isChecked());
+        QObject::connect(&inheritThickness, &QCheckBox::toggled, &dialog,
+                         [&](bool checked) { thickness.setEnabled(!checked); });
         QObject::connect(&inherit, &QCheckBox::toggled, &dialog,
                          [&](bool checked) { colorButton.setEnabled(!checked); });
     }
@@ -1476,16 +1543,21 @@ void Gui2DWindow::showGeometryProperties()
     }
     if (kind == "group")
     {
+        checkpoint();
         geometry_.renameThread(id, name.text().trimmed().toStdString());
         geometry_.setThreadProperties(id, static_cast<geom::GeometryType>(type.currentIndex()),
                                      active.isChecked(), chosen.rgb() & 0xFFFFFF);
+        geometry_.setThreadThickness(id, thickness.value());
     }
     else
     {
+        checkpoint();
         geometry_.renamePolyline(id, name.text().trimmed().toStdString());
         geometry_.setPolylineColorOverride(id,
             inherit.isChecked() ? std::nullopt :
             std::optional<std::uint32_t>(chosen.rgb() & 0xFFFFFF));
+        geometry_.setPolylineThicknessOverride(id,
+            inheritThickness.isChecked() ? std::nullopt : std::optional<double>(thickness.value()));
     }
     redrawGeometry();
     outputText_->append("Geometry properties updated.");
@@ -1668,6 +1740,7 @@ void Gui2DWindow::deleteSelectedGeometry()
         if (answer != QMessageBox::Yes)
             return;
 
+        checkpoint();
         if (!geometry_.deletePolyline(id))
             return;
 
@@ -1708,6 +1781,7 @@ void Gui2DWindow::deleteSelectedGeometry()
         if (answer != QMessageBox::Yes)
             return;
 
+        checkpoint();
         if (!geometry_.deleteThread(id))
             return;
 
@@ -1790,6 +1864,7 @@ void Gui2DWindow::applySnap()
             return;
         }
     }
+    if (!moves.empty()) checkpoint();
     for (const auto& m : moves) geometry_.moveVertex(m.first, m.second.x(), m.second.y());
     redrawGeometry();
     outputText_->append(QString("Snapped %1 geometry vertices to nearest mesh nodes.").arg(moves.size()));
@@ -1812,12 +1887,14 @@ void Gui2DWindow::closeActivePolyline()
         const auto& b = geometry_.vertices().at(poly.vertices.back());
         if (QLineF(QPointF(a.x,a.y), QPointF(b.x,b.y)).length() < 1e-9)
         { outputText_->append("Cannot close: endpoints coincide."); return; }
+        checkpoint();
         geometry_.closePolyline(id);
     }
-    else if (!geometry_.closePolylineReusingLastEdge(id))
+    else { checkpoint(); if (!geometry_.closePolylineReusingLastEdge(id))
     {
         outputText_->append("Cannot close without a new edge: need at least four vertices and an unshared final edge.");
         return;
+    }
     }
     if (activePolyline_) finishDrawing();
     redrawGeometry();
@@ -1858,6 +1935,7 @@ void Gui2DWindow::redrawGeometry()
             const auto& b = geometry_.vertices().at(e.vertex1);
             QPen polyPen(edgePen);
             polyPen.setColor(QColor::fromRgb(geometry_.effectivePolylineColor(poly.id)));
+            polyPen.setWidthF(2.0 * geometry_.effectivePolylineThickness(poly.id));
             auto* line = scene_->addLine(a.x,a.y,b.x,b.y,polyPen);
             line->setZValue(105);
             geometryItems_.push_back(line);
@@ -1991,6 +2069,7 @@ void Gui2DWindow::printSelectedInfo()
 void Gui2DWindow::deleteSelectedEntity()
 {
     bool ok = false;
+    if (selectedGeometryVertex_ || selectedGeometryEdge_ || selectedGeometryPolyline_) checkpoint();
     if (selectedGeometryVertex_) ok = geometry_.deleteVertex(*selectedGeometryVertex_);
     else if (selectedGeometryEdge_) ok = geometry_.deleteEdge(*selectedGeometryEdge_);
     else if (selectedGeometryPolyline_) ok = geometry_.deletePolyline(*selectedGeometryPolyline_);
@@ -2000,4 +2079,229 @@ void Gui2DWindow::deleteSelectedEntity()
     const auto errors = geometry_.validate();
     outputText_->append(QString("Geometry edited. Validation issues: %1").arg(errors.size()));
     for (const auto& error : errors) outputText_->append(QString::fromStdString(error));
+}
+
+void Gui2DWindow::checkpoint()
+{
+    undoHistory_.push_back(geometry_);
+    if (undoHistory_.size() > 80) undoHistory_.erase(undoHistory_.begin());
+    redoHistory_.clear();
+}
+
+void Gui2DWindow::undoGeometry()
+{
+    if (undoHistory_.empty()) { outputText_->append("Nothing to undo."); return; }
+    activePolyline_.reset();
+    redoHistory_.push_back(geometry_);
+    geometry_ = std::move(undoHistory_.back()); undoHistory_.pop_back();
+    selectedGeometryVertex_.reset(); selectedGeometryEdge_.reset(); selectedGeometryPolyline_.reset();
+    redrawGeometry();
+}
+
+void Gui2DWindow::redoGeometry()
+{
+    if (redoHistory_.empty()) { outputText_->append("Nothing to redo."); return; }
+    activePolyline_.reset();
+    undoHistory_.push_back(geometry_);
+    geometry_ = std::move(redoHistory_.back()); redoHistory_.pop_back();
+    selectedGeometryVertex_.reset(); selectedGeometryEdge_.reset(); selectedGeometryPolyline_.reset();
+    redrawGeometry();
+}
+
+void Gui2DWindow::saveGeometry()
+{
+    const QString filename = QFileDialog::getSaveFileName(this, "Save Geometry", geometryFilePath_,
+                                                          "EvolBeing Geometry (*.eg2d.json);;JSON (*.json)");
+    if (filename.isEmpty()) return;
+    QJsonObject root;
+    root["format"] = "EvolBeing.Geometry2D";
+    root["version"] = 1;
+    QJsonArray vertices, edges, polylines, groups;
+    for (const auto& v : geometry_.vertices()) {
+        QJsonObject o; o["id"] = int(v.id); o["x"] = v.x; o["y"] = v.y; o["deleted"] = v.deleted;
+        vertices.append(o);
+    }
+    for (const auto& e : geometry_.edges()) {
+        QJsonObject o; o["id"] = int(e.id); o["vertex0"] = int(e.vertex0);
+        o["vertex1"] = int(e.vertex1); o["deleted"] = e.deleted; edges.append(o);
+    }
+    for (const auto& g : geometry_.threads()) {
+        QJsonObject o; o["id"] = double(g.id); o["name"] = QString::fromStdString(g.name);
+        o["type"] = int(g.type); o["active"] = g.active;
+        o["colorRGB"] = double(g.colorRGB); o["thickness"] = g.thickness;
+        QJsonArray members; for (auto id : g.polylines) members.append(double(id));
+        o["polylines"] = members; groups.append(o);
+    }
+    for (const auto& p : geometry_.polylines()) {
+        QJsonObject o; o["id"] = double(p.id); o["name"] = QString::fromStdString(p.name);
+        o["closed"] = p.closed; o["deleted"] = p.deleted;
+        o["threadID"] = p.threadID ? QJsonValue(double(*p.threadID)) : QJsonValue(QJsonValue::Null);
+        o["colorOverrideRGB"] = p.colorOverrideRGB ? QJsonValue(double(*p.colorOverrideRGB)) : QJsonValue(QJsonValue::Null);
+        o["thicknessOverride"] = p.thicknessOverride ? QJsonValue(*p.thicknessOverride) : QJsonValue(QJsonValue::Null);
+        QJsonArray vs, es;
+        for (auto id : p.vertices) vs.append(double(id));
+        for (auto id : p.edges) es.append(double(id));
+        o["vertices"] = vs; o["edges"] = es; polylines.append(o);
+    }
+    root["vertices"] = vertices; root["edges"] = edges;
+    root["polylines"] = polylines; root["groups"] = groups;
+    QSaveFile file(filename);
+    if (!file.open(QIODevice::WriteOnly) || file.write(QJsonDocument(root).toJson(QJsonDocument::Indented)) < 0 || !file.commit()) {
+        QMessageBox::warning(this, "Save Geometry", "Unable to write geometry file."); return;
+    }
+    geometryFilePath_ = filename;
+    outputText_->append("Saved geometry: " + filename);
+}
+
+void Gui2DWindow::loadGeometry()
+{
+    const QString filename = QFileDialog::getOpenFileName(this, "Load Geometry", geometryFilePath_,
+                                                          "EvolBeing Geometry (*.eg2d.json *.json)");
+    if (filename.isEmpty()) return;
+    QFile file(filename);
+    if (!file.open(QIODevice::ReadOnly)) { QMessageBox::warning(this, "Load Geometry", "Cannot read file."); return; }
+    QJsonParseError error;
+    const auto document = QJsonDocument::fromJson(file.readAll(), &error);
+    if (error.error != QJsonParseError::NoError || !document.isObject()) {
+        QMessageBox::warning(this, "Load Geometry", "Invalid JSON document."); return;
+    }
+    const auto root = document.object();
+    if (root.value("format").toString() != "EvolBeing.Geometry2D" || root.value("version").toInt() != 1) {
+        QMessageBox::warning(this, "Load Geometry", "Unsupported geometry file format/version."); return;
+    }
+    try {
+        auto requireArray = [&](const QJsonObject& o, const char* key) -> QJsonArray {
+            if (!o.value(key).isArray()) throw std::runtime_error("Missing array field");
+            return o.value(key).toArray();
+        };
+        auto integer = [&](const QJsonObject& o, const char* key) -> std::uint32_t {
+            auto v=o.value(key);
+            if (!v.isDouble() || v.toDouble() < 0 || v.toDouble() > 4294967295.0 ||
+                std::floor(v.toDouble()) != v.toDouble()) throw std::runtime_error("Invalid ID");
+            return static_cast<std::uint32_t>(v.toDouble());
+        };
+        auto idArray = [&](const QJsonObject& o, const char* key) {
+            std::vector<std::uint32_t> ids;
+            for (const auto& v : requireArray(o,key)) {
+                QJsonObject temp; temp["id"] = v; ids.push_back(integer(temp,"id"));
+            }
+            return ids;
+        };
+        std::vector<geom::GeometryVertex2D> vertices;
+        std::vector<geom::GeometryEdge2D> edges;
+        std::vector<geom::Polyline2D> polylines;
+        std::vector<geom::GeometryThread2D> groups;
+        for (const auto& value : requireArray(root,"vertices")) {
+            if (!value.isObject()) throw std::runtime_error("Invalid vertex");
+            auto o=value.toObject(); geom::GeometryVertex2D v;
+            v.id=integer(o,"id");
+            if (!o.value("x").isDouble() || !o.value("y").isDouble() || !o.value("deleted").isBool()) throw std::runtime_error("Invalid vertex fields");
+            v.x=o.value("x").toDouble(); v.y=o.value("y").toDouble(); v.deleted=o.value("deleted").toBool(); vertices.push_back(v);
+        }
+        for (const auto& value : requireArray(root,"edges")) {
+            if (!value.isObject()) throw std::runtime_error("Invalid edge");
+            auto o=value.toObject(); geom::GeometryEdge2D e;
+            e.id=integer(o,"id"); e.vertex0=integer(o,"vertex0"); e.vertex1=integer(o,"vertex1");
+            if (!o.value("deleted").isBool()) throw std::runtime_error("Invalid edge deletion state");
+            e.deleted=o.value("deleted").toBool(); edges.push_back(e);
+        }
+        for (const auto& value : requireArray(root,"groups")) {
+            if (!value.isObject()) throw std::runtime_error("Invalid group");
+            auto o=value.toObject(); geom::GeometryThread2D g;
+            g.id=integer(o,"id"); g.colorRGB=integer(o,"colorRGB");
+            if (!o.value("name").isString() || !o.value("active").isBool() || !o.value("thickness").isDouble()) throw std::runtime_error("Invalid group fields");
+            g.name=o.value("name").toString().toStdString(); g.active=o.value("active").toBool();
+            g.type=static_cast<geom::GeometryType>(integer(o,"type")); g.thickness=o.value("thickness").toDouble();
+            g.polylines=idArray(o,"polylines"); groups.push_back(std::move(g));
+        }
+        for (const auto& value : requireArray(root,"polylines")) {
+            if (!value.isObject()) throw std::runtime_error("Invalid polyline");
+            auto o=value.toObject(); geom::Polyline2D p;
+            p.id=integer(o,"id");
+            if (!o.value("name").isString() || !o.value("closed").isBool() || !o.value("deleted").isBool()) throw std::runtime_error("Invalid polyline fields");
+            p.name=o.value("name").toString().toStdString(); p.closed=o.value("closed").toBool(); p.deleted=o.value("deleted").toBool();
+            if (!o.value("threadID").isNull()) p.threadID=integer(o,"threadID");
+            if (!o.value("colorOverrideRGB").isNull()) p.colorOverrideRGB=integer(o,"colorOverrideRGB");
+            if (!o.value("thicknessOverride").isNull()) {
+                if (!o.value("thicknessOverride").isDouble()) throw std::runtime_error("Invalid thickness override");
+                p.thicknessOverride=o.value("thicknessOverride").toDouble();
+            }
+            p.vertices=idArray(o,"vertices"); p.edges=idArray(o,"edges"); polylines.push_back(std::move(p));
+        }
+        geom::Geometry2D loaded;
+        if (!loaded.importState(std::move(vertices),std::move(edges),std::move(polylines),std::move(groups)))
+            throw std::runtime_error("Geometry connectivity or metadata validation failed");
+        if (QMessageBox::question(this, "Load Geometry", "Replace the current geometry with the loaded file?\nThe Cartesian mesh will be preserved.") != QMessageBox::Yes) return;
+        checkpoint();
+        cancelDrawing();
+        geometry_=std::move(loaded);
+        selectedGeometryVertex_.reset(); selectedGeometryEdge_.reset(); selectedGeometryPolyline_.reset();
+        geometryFilePath_=filename;
+        redrawGeometry();
+        outputText_->append("Loaded geometry: " + filename);
+    } catch (const std::exception& e) {
+        QMessageBox::warning(this, "Load Geometry", QString("Invalid geometry file: %1").arg(e.what()));
+    }
+}
+
+void Gui2DWindow::scaleGeometry()
+{
+    QDialog dialog(this); dialog.setWindowTitle("Scale Geometry");
+    QFormLayout layout(&dialog);
+    QDoubleSpinBox sx, sy; sx.setRange(0.001,10000); sy.setRange(0.001,10000);
+    sx.setDecimals(4); sy.setDecimals(4); sx.setValue(1); sy.setValue(1);
+    QCheckBox uniform("Uniform scaling"); uniform.setChecked(true);
+    QObject::connect(&sx, QOverload<double>::of(&QDoubleSpinBox::valueChanged), &dialog,
+                     [&](double v) { if (uniform.isChecked()) sy.setValue(v); });
+    layout.addRow("X factor:", &sx); layout.addRow("Y factor:", &sy); layout.addRow(&uniform);
+    QDialogButtonBox buttons(QDialogButtonBox::Ok|QDialogButtonBox::Cancel);
+    layout.addRow(&buttons);
+    QObject::connect(&buttons,&QDialogButtonBox::accepted,&dialog,&QDialog::accept);
+    QObject::connect(&buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);
+    if (dialog.exec()!=QDialog::Accepted) return;
+    bool found=false; double xmin=0,xmax=0,ymin=0,ymax=0;
+    for (const auto& v : geometry_.vertices()) if (!v.deleted) {
+        if (!found) { xmin=xmax=v.x; ymin=ymax=v.y; found=true; }
+        else { xmin=std::min(xmin,v.x); xmax=std::max(xmax,v.x); ymin=std::min(ymin,v.y); ymax=std::max(ymax,v.y); }
+    }
+    if (!found) return;
+    const double cx=(xmin+xmax)*0.5, cy=(ymin+ymax)*0.5;
+    checkpoint();
+    for (const auto& v : geometry_.vertices()) if (!v.deleted)
+        geometry_.moveVertex(v.id,cx+sx.value()*(v.x-cx),cy+sy.value()*(v.y-cy));
+    redrawGeometry(); outputText_->append("Geometry scaled; Cartesian mesh unchanged.");
+}
+
+void Gui2DWindow::connectNodesClick(const QPointF& pos)
+{
+    // Reuse an existing geometry vertex, or create a geometry vertex at a mesh node.
+    std::optional<geom::GeometryVertexID> chosen;
+    double best=12.0;
+    const QPoint screen=view_->mapFromScene(pos);
+    for (const auto& v : geometry_.vertices()) if (!v.deleted) {
+        const double d=QLineF(QPointF(screen),QPointF(view_->mapFromScene(QPointF(v.x,v.y)))).length();
+        if (d < best) { best=d; chosen=v.id; }
+    }
+    QPointF target=pos;
+    if (!chosen && grid_.nodeCount()) target=nearestMeshNode(pos);
+    if (!chosen) {
+        if (!grid_.nodeCount() || QLineF(QPointF(screen),QPointF(view_->mapFromScene(target))).length()>12.0) {
+            outputText_->append("Connect Nodes: click an existing geometry or Cartesian node."); return;
+        }
+        for (const auto& v : geometry_.vertices()) if (!v.deleted && QLineF(QPointF(v.x,v.y),target).length()<1e-9) { chosen=v.id; break; }
+    }
+    if (!chosen) { checkpoint(); chosen=geometry_.addVertex(target.x(),target.y()); }
+    if (!connectStart_) { connectStart_=chosen; outputText_->append(QString("Connect Nodes: first vertex %1 selected.").arg(*chosen)); redrawGeometry(); return; }
+    const auto first=*connectStart_; connectStart_.reset();
+    if (first==*chosen) { outputText_->append("Connect Nodes: select two different nodes."); return; }
+    for (const auto& e : geometry_.edges()) if (!e.deleted &&
+        ((e.vertex0==first && e.vertex1==*chosen)||(e.vertex1==first && e.vertex0==*chosen))) {
+        outputText_->append("Connect Nodes: edge already exists."); return;
+    }
+    checkpoint();
+    const auto id=geometry_.createPolyline();
+    geometry_.appendVertexToPolyline(id,first);
+    geometry_.appendVertexToPolyline(id,*chosen);
+    redrawGeometry();
+    outputText_->append(QString("Connected geometry vertices %1 and %2 (polyline %3).").arg(first).arg(*chosen).arg(id));
 }

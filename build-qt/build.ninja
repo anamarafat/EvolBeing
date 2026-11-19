@@ -369,6 +369,43 @@ build Geometry2DTests.exe: CXX_EXECUTABLE_LINKER__Geometry2DTests_Debug CMakeFil
   TARGET_IMPLIB = Geometry2DTests.lib
   TARGET_PDB = Geometry2DTests.pdb
 
+# =============================================================================
+# Object build statements for EXECUTABLE target Geometry2DStage4Tests
+
+
+#############################################
+# Order-only phony target for Geometry2DStage4Tests
+
+build cmake_object_order_depends_target_Geometry2DStage4Tests: phony || cmake_object_order_depends_target_GeomCore
+
+build CMakeFiles\Geometry2DStage4Tests.dir\tests\Geometry2DStage4Tests.cpp.obj: CXX_COMPILER__Geometry2DStage4Tests_unscanned_Debug C$:\Dev\EvolBeing\EvolBeing_Gen_alpha\tests\Geometry2DStage4Tests.cpp || cmake_object_order_depends_target_Geometry2DStage4Tests
+  FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++20 -MDd
+  INCLUDES = -IC:\Dev\EvolBeing\EvolBeing_Gen_alpha\include
+  OBJECT_DIR = CMakeFiles\Geometry2DStage4Tests.dir
+  OBJECT_FILE_DIR = CMakeFiles\Geometry2DStage4Tests.dir\tests
+  TARGET_COMPILE_PDB = CMakeFiles\Geometry2DStage4Tests.dir\
+  TARGET_PDB = Geometry2DStage4Tests.pdb
+
+
+# =============================================================================
+# Link build statements for EXECUTABLE target Geometry2DStage4Tests
+
+
+#############################################
+# Link the executable Geometry2DStage4Tests.exe
+
+build Geometry2DStage4Tests.exe: CXX_EXECUTABLE_LINKER__Geometry2DStage4Tests_Debug CMakeFiles\Geometry2DStage4Tests.dir\tests\Geometry2DStage4Tests.cpp.obj | GeomCore.lib || GeomCore.lib
+  FLAGS = /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -MDd
+  LINK_FLAGS = /machine:x64 /debug /INCREMENTAL /subsystem:console
+  LINK_LIBRARIES = GeomCore.lib  kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib
+  OBJECT_DIR = CMakeFiles\Geometry2DStage4Tests.dir
+  POST_BUILD = C:\windows\system32\cmd.exe /C "cd /D C:\Dev\EvolBeing\EvolBeing_Gen_alpha\build-qt && C:\Dev\vcpkg\vcpkg.exe z-applocal --target-binary=C:/Dev/EvolBeing/EvolBeing_Gen_alpha/build-qt/Geometry2DStage4Tests.exe --installed-bin-dir=C:/Dev/vcpkg/installed/x64-windows/debug/bin"
+  PRE_LINK = cd .
+  TARGET_COMPILE_PDB = CMakeFiles\Geometry2DStage4Tests.dir\
+  TARGET_FILE = Geometry2DStage4Tests.exe
+  TARGET_IMPLIB = Geometry2DStage4Tests.lib
+  TARGET_PDB = Geometry2DStage4Tests.pdb
+
 
 #############################################
 # Utility command for test
@@ -635,6 +672,8 @@ build EvolBeing_Gen_Alpha: phony EvolBeing_Gen_Alpha.exe
 
 build GeomCore: phony GeomCore.lib
 
+build Geometry2DStage4Tests: phony Geometry2DStage4Tests.exe
+
 build Geometry2DTests: phony Geometry2DTests.exe
 
 # =============================================================================
@@ -645,7 +684,7 @@ build Geometry2DTests: phony Geometry2DTests.exe
 #############################################
 # Folder: C:/Dev/EvolBeing/EvolBeing_Gen_alpha/build-qt
 
-build all: phony GeomCore.lib EvolBeing_Gen_Alpha.exe Geometry2DTests.exe
+build all: phony GeomCore.lib EvolBeing_Gen_Alpha.exe Geometry2DTests.exe Geometry2DStage4Tests.exe
 
 # =============================================================================
 # Built-in targets

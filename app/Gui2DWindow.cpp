@@ -28,6 +28,10 @@
 #include <QTextEdit>
 #include <QToolBar>
 #include <QActionGroup>
+#include <QToolButton>
+#include <QWidgetAction>
+#include <QCheckBox>
+#include <QSet>
 #include <QLineF>
 
 #include <QInputDialog>
@@ -115,6 +119,7 @@ Gui2DWindow::Gui2DWindow(QWidget* parent)
 
     // Fit view button
     fitViewAction_ = meshToolbar->addAction("Fit View");
+    infoAction_ = meshToolbar->addAction("Info");
     meshToolbar->addSeparator();
 
     // Selection buttons
@@ -125,12 +130,45 @@ Gui2DWindow::Gui2DWindow(QWidget* parent)
     // Geometry drawing button
     meshToolbar->addSeparator();
     drawLineAction_ = meshToolbar->addAction("Draw Line");
+    drawPolylineAction_ = meshToolbar->addAction("Polyline");
+    drawEdgeAction_ = meshToolbar->addAction("Draw Edge");
+    drawVertexAction_ = meshToolbar->addAction("Draw Vertex");
+    meshToolbar->addSeparator();
+    selectGeometryVertexAction_ = meshToolbar->addAction("Select Vertex");
+    selectGeometryEdgeAction_ = meshToolbar->addAction("Select Edge");
+    selectGeometryPolylineAction_ = meshToolbar->addAction("Select Polyline");
+    meshToolbar->addSeparator();
+    auto* snapButton = new QToolButton(meshToolbar);
+    snapButton->setText("Snap");
+    snapButton->setPopupMode(QToolButton::MenuButtonPopup);
+    auto* snapMenu = new QMenu(snapButton);
+    snapAllAction_ = snapMenu->addAction("Snap All geometry vertices");
+    snapAllAction_->setCheckable(true);
+    snapButton->setMenu(snapMenu);
+    meshToolbar->addWidget(snapButton);
+    connect(snapButton, &QToolButton::clicked, this, &Gui2DWindow::applySnap);
+    auto* closeButton = new QToolButton(meshToolbar);
+    closeButton->setText("Close Polyline");
+    closeButton->setPopupMode(QToolButton::MenuButtonPopup);
+    auto* closeMenu = new QMenu(closeButton);
+    newEdgeAction_ = closeMenu->addAction("New Edge");
+    newEdgeAction_->setCheckable(true);
+    newEdgeAction_->setChecked(true);
+    closeButton->setMenu(closeMenu);
+    meshToolbar->addWidget(closeButton);
+    connect(closeButton, &QToolButton::clicked, this, &Gui2DWindow::closeActivePolyline);
+    auto* deleteEntityAction = meshToolbar->addAction("Delete Entity");
+    connect(deleteEntityAction, &QAction::triggered, this, &Gui2DWindow::deleteSelectedEntity);
+    connect(infoAction_, &QAction::triggered, this, &Gui2DWindow::printSelectedInfo);
 
     // Allow buttons to remain pressed/highlighted
     cellSelectAction_->setCheckable(true);
     faceSelectAction_->setCheckable(true);
     nodeSelectAction_->setCheckable(true);
     drawLineAction_->setCheckable(true);
+    for (auto* action : {drawPolylineAction_, drawEdgeAction_, drawVertexAction_,
+                         selectGeometryVertexAction_, selectGeometryEdgeAction_, selectGeometryPolylineAction_})
+        action->setCheckable(true);
 
     // Group the selection buttons
     QActionGroup* selectionGroup = new QActionGroup(this);
@@ -141,6 +179,9 @@ Gui2DWindow::Gui2DWindow(QWidget* parent)
     selectionGroup->addAction(faceSelectAction_);
     selectionGroup->addAction(nodeSelectAction_);
     selectionGroup->addAction(drawLineAction_);
+    for (auto* action : {drawPolylineAction_, drawEdgeAction_, drawVertexAction_,
+                         selectGeometryVertexAction_, selectGeometryEdgeAction_, selectGeometryPolylineAction_})
+        selectionGroup->addAction(action);
 
     // Fit View
     connect(fitViewAction_, &QAction::triggered,
@@ -160,8 +201,8 @@ Gui2DWindow::Gui2DWindow(QWidget* parent)
             {
                 // Finish an unfinished polyline when
                 // switching away from drawing mode.
-                if (selectionMode_ == SelectionMode::DrawLine &&
-                    mode != SelectionMode::DrawLine)
+                if ((selectionMode_ == SelectionMode::DrawLine || selectionMode_ == SelectionMode::DrawPolyline || selectionMode_ == SelectionMode::DrawEdge) &&
+                    mode != selectionMode_)
                 {
                     finishDrawing();
                 }
@@ -171,7 +212,7 @@ Gui2DWindow::Gui2DWindow(QWidget* parent)
             }
             else if (selectionMode_ == mode)
             {
-                if (mode == SelectionMode::DrawLine)
+                if (mode == SelectionMode::DrawLine || mode == SelectionMode::DrawPolyline || mode == SelectionMode::DrawEdge)
                     finishDrawing();
 
                 selectionMode_ = SelectionMode::None;
@@ -184,6 +225,12 @@ Gui2DWindow::Gui2DWindow(QWidget* parent)
     connectTool(faceSelectAction_, SelectionMode::Face);
     connectTool(nodeSelectAction_, SelectionMode::Node);
     connectTool(drawLineAction_, SelectionMode::DrawLine);
+    connectTool(drawPolylineAction_, SelectionMode::DrawPolyline);
+    connectTool(drawEdgeAction_, SelectionMode::DrawEdge);
+    connectTool(drawVertexAction_, SelectionMode::DrawVertex);
+    connectTool(selectGeometryVertexAction_, SelectionMode::GeometryVertex);
+    connectTool(selectGeometryEdgeAction_, SelectionMode::GeometryEdge);
+    connectTool(selectGeometryPolylineAction_, SelectionMode::GeometryPolyline);
 
     // Viewport takes all remaining vertical space
     leftLayout->addWidget(meshToolbar);
@@ -234,6 +281,7 @@ Gui2DWindow::Gui2DWindow(QWidget* parent)
         [this](QTreeWidgetItem* current, QTreeWidgetItem*)
         {
             clearGeometryPartHighlight();
+            selectedGeometryPolyline_.reset();
 
             if (!current)
                 return;
@@ -246,6 +294,7 @@ Gui2DWindow::Gui2DWindow(QWidget* parent)
                 current->data(0, Qt::UserRole + 1)
                     .value<geom::PolylineID>();
 
+            selectedGeometryPolyline_ = id;
             highlightGeometryPart(id);
         }
     );
@@ -364,6 +413,7 @@ void Gui2DWindow::createBoundingBox()
 
     // Remove selection highlights before mesh regeneration
     clearSelectionHighlight();
+    finishDrawing();
     clearGeometryGraphics();
 
     grid_.generate(
@@ -441,6 +491,7 @@ void Gui2DWindow::createBoundingBox()
     );
 
     gridItem_->setZValue(-1);
+    redrawGeometry();
 
     // Margin around bounding box
     const double margin =
@@ -505,12 +556,19 @@ void Gui2DWindow::createBoundingBox()
 void Gui2DWindow::handleMeshClick(const QPointF& scenePos)
 {
     // Route clicks to geometry drawing
-    if (selectionMode_ == SelectionMode::DrawLine)
+    if (selectionMode_ == SelectionMode::DrawLine || selectionMode_ == SelectionMode::DrawPolyline ||
+        selectionMode_ == SelectionMode::DrawEdge || selectionMode_ == SelectionMode::DrawVertex)
     {
         handleDrawingClick(scenePos);
         return;
     }
 
+    if (selectionMode_ == SelectionMode::GeometryVertex || selectionMode_ == SelectionMode::GeometryEdge ||
+        selectionMode_ == SelectionMode::GeometryPolyline)
+    {
+        handleGeometrySelection(scenePos);
+        return;
+    }
     if (selectionMode_ == SelectionMode::None)
         return;
 
@@ -862,7 +920,8 @@ void Gui2DWindow::clearSelectionHighlight()
 void Gui2DWindow::handleDrawingClick(
     const QPointF& scenePos)
 {
-    if (selectionMode_ != SelectionMode::DrawLine)
+    if (selectionMode_ != SelectionMode::DrawLine && selectionMode_ != SelectionMode::DrawPolyline &&
+        selectionMode_ != SelectionMode::DrawEdge && selectionMode_ != SelectionMode::DrawVertex)
         return;
 
     if (!boundingBoxItem_)
@@ -874,6 +933,14 @@ void Gui2DWindow::handleDrawingClick(
     if (!box.contains(scenePos))
         return;
 
+    // Standalone vertex: intentionally not added to a polyline.
+    if (selectionMode_ == SelectionMode::DrawVertex)
+    {
+        const auto id = geometry_.addVertex(scenePos.x(), scenePos.y());
+        redrawGeometry();
+        outputText_->append(QString("Created vertex %1").arg(id));
+        return;
+    }
     // Start a new polyline
     if (!activePolyline_)
     {
@@ -953,6 +1020,8 @@ void Gui2DWindow::handleDrawingClick(
         geometryItems_.push_back(edgeItem);
     }
 
+    if (selectionMode_ == SelectionMode::DrawEdge && polyline.vertices.size() == 2)
+        finishDrawing();
     outputText_->append(
         QString("Geometry vertex %1 added at (%2, %3)")
             .arg(vertexID)
@@ -964,7 +1033,7 @@ void Gui2DWindow::handleDrawingClick(
 void Gui2DWindow::handleDrawingMove(
     const QPointF& scenePos)
 {
-    if (selectionMode_ != SelectionMode::DrawLine ||
+    if ((selectionMode_ != SelectionMode::DrawLine && selectionMode_ != SelectionMode::DrawPolyline && selectionMode_ != SelectionMode::DrawEdge) ||
         !activePolyline_)
     {
         clearPreviewLine();
@@ -1054,7 +1123,6 @@ void Gui2DWindow::clearGeometryGraphics()
     activeDrawingItems_.clear();
     activePolyline_.reset();
 
-    geometry_.clear();
     refreshGeometryTree();
 }
 
@@ -1545,4 +1613,280 @@ void Gui2DWindow::deleteSelectedGeometry()
     }
 
     refreshGeometryTree();
+}
+
+
+QPointF Gui2DWindow::nearestMeshNode(const QPointF& point) const
+{
+    if (grid_.nodeCount() == 0 || nx_ < 0 || ny_ < 0)
+        return point;
+    double best = std::numeric_limits<double>::infinity();
+    QPointF result = point;
+    for (int j = 0; j <= ny_; ++j)
+        for (int i = 0; i <= nx_; ++i)
+        {
+            const auto* n = grid_.nodeAt(static_cast<std::uint32_t>(i), static_cast<std::uint32_t>(j));
+            if (!n) continue;
+            const double dx = n->x - point.x(), dy = n->y - point.y();
+            const double d2 = dx*dx + dy*dy;
+            if (d2 < best) { best = d2; result = QPointF(n->x, n->y); }
+        }
+    return result;
+}
+
+void Gui2DWindow::applySnap()
+{
+    if (!grid_.nodeCount()) { outputText_->append("Snap: generate a mesh first."); return; }
+    std::vector<geom::GeometryVertexID> ids;
+    if (snapAllAction_->isChecked())
+    {
+        for (const auto& v : geometry_.vertices()) if (!v.deleted) ids.push_back(v.id);
+    }
+    else if (selectedGeometryVertex_)
+        ids.push_back(*selectedGeometryVertex_);
+    else if (selectedGeometryEdge_ && geometry_.isEdgeActive(*selectedGeometryEdge_))
+    {
+        const auto& e = geometry_.edges().at(*selectedGeometryEdge_);
+        ids = {e.vertex0, e.vertex1};
+    }
+    else if (selectedGeometryPolyline_ && *selectedGeometryPolyline_ < geometry_.polylines().size())
+        ids = geometry_.polylines().at(*selectedGeometryPolyline_).vertices;
+    else
+    {
+        outputText_->append("Snap: select a geometry vertex, edge or polyline, or enable Snap All.");
+        return;
+    }
+    std::vector<std::pair<geom::GeometryVertexID, QPointF>> moves;
+    std::sort(ids.begin(), ids.end());
+    ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
+    for (auto id : ids)
+    {
+        if (!geometry_.isVertexActive(id)) continue;
+        const auto& v = geometry_.vertices().at(id);
+        moves.emplace_back(id, nearestMeshNode(QPointF(v.x, v.y)));
+    }
+    // Reject a snap that collapses any active edge; do not partially move geometry.
+    auto proposed = [&moves, this](geom::GeometryVertexID id) {
+        for (const auto& m : moves) if (m.first == id) return m.second;
+        const auto& v = geometry_.vertices().at(id);
+        return QPointF(v.x, v.y);
+    };
+    for (const auto& e : geometry_.edges())
+    {
+        if (e.deleted) continue;
+        const QPointF a = proposed(e.vertex0), b = proposed(e.vertex1);
+        if (QLineF(a, b).length() < 1e-9)
+        {
+            outputText_->append(QString("Snap cancelled: edge %1 would collapse.").arg(e.id));
+            return;
+        }
+    }
+    for (const auto& m : moves) geometry_.moveVertex(m.first, m.second.x(), m.second.y());
+    redrawGeometry();
+    outputText_->append(QString("Snapped %1 geometry vertices to nearest mesh nodes.").arg(moves.size()));
+}
+
+void Gui2DWindow::closeActivePolyline()
+{
+    const auto target = activePolyline_ ? activePolyline_ : selectedGeometryPolyline_;
+    if (!target) { outputText_->append("No active or selected polyline."); return; }
+    const auto id = *target;
+    if (id >= geometry_.polylines().size() || geometry_.polylines()[id].deleted)
+    { outputText_->append("Polyline no longer exists."); return; }
+    const auto& poly = geometry_.polylines()[id];
+    if (poly.closed) { outputText_->append("Polyline is already closed."); return; }
+    if (newEdgeAction_->isChecked())
+    {
+        if (poly.vertices.size() < 3)
+        { outputText_->append("Closure needs at least three vertices."); return; }
+        const auto& a = geometry_.vertices().at(poly.vertices.front());
+        const auto& b = geometry_.vertices().at(poly.vertices.back());
+        if (QLineF(QPointF(a.x,a.y), QPointF(b.x,b.y)).length() < 1e-9)
+        { outputText_->append("Cannot close: endpoints coincide."); return; }
+        geometry_.closePolyline(id);
+    }
+    else if (!geometry_.closePolylineReusingLastEdge(id))
+    {
+        outputText_->append("Cannot close without a new edge: need at least four vertices and an unshared final edge.");
+        return;
+    }
+    if (activePolyline_) finishDrawing();
+    redrawGeometry();
+    refreshGeometryTree();
+    outputText_->append(QString("Closed polyline %1.").arg(id));
+}
+
+void Gui2DWindow::redrawGeometry()
+{
+    clearPreviewLine();
+    clearGeometryPartHighlight();
+    for (auto* item : geometryItems_) { scene_->removeItem(item); delete item; }
+    geometryItems_.clear();
+    polylineGraphics_.clear();
+    activeDrawingItems_.clear();
+    QPen edgePen(QColor(220,40,40)); edgePen.setCosmetic(true); edgePen.setWidth(2);
+    QPen vertexPen(QColor(30,100,220)); vertexPen.setCosmetic(true);
+    auto drawVertex = [this, &vertexPen](geom::GeometryVertexID id) {
+        if (!geometry_.isVertexActive(id)) return static_cast<QGraphicsItem*>(nullptr);
+        const auto& v = geometry_.vertices().at(id);
+        auto* item = scene_->addEllipse(-4,-4,8,8,vertexPen,QBrush(QColor(30,100,220)));
+        item->setPos(v.x,v.y);
+        item->setFlag(QGraphicsItem::ItemIgnoresTransformations,true);
+        item->setZValue(110);
+        geometryItems_.push_back(item);
+        return static_cast<QGraphicsItem*>(item);
+    };
+    QSet<geom::GeometryVertexID> drawn;
+    polylineGraphics_.resize(geometry_.polylines().size());
+    for (const auto& poly : geometry_.polylines())
+    {
+        if (poly.deleted) continue;
+        for (auto id : poly.edges)
+        {
+            if (!geometry_.isEdgeActive(id)) continue;
+            const auto& e = geometry_.edges().at(id);
+            const auto& a = geometry_.vertices().at(e.vertex0);
+            const auto& b = geometry_.vertices().at(e.vertex1);
+            auto* line = scene_->addLine(a.x,a.y,b.x,b.y,edgePen);
+            line->setZValue(105);
+            geometryItems_.push_back(line);
+            polylineGraphics_[poly.id].push_back(line);
+        }
+        for (auto id : poly.vertices)
+        {
+            if (drawn.contains(id)) continue;
+            drawn.insert(id);
+            auto* item = drawVertex(id);
+            if (item) polylineGraphics_[poly.id].push_back(item);
+        }
+    }
+    for (const auto& v : geometry_.vertices())
+        if (!v.deleted && !drawn.contains(v.id)) drawVertex(v.id);
+    if (selectedGeometryPolyline_ && *selectedGeometryPolyline_ < geometry_.polylines().size() &&
+        !geometry_.polylines()[*selectedGeometryPolyline_].deleted)
+        highlightGeometryPart(*selectedGeometryPolyline_);
+    refreshGeometryTree();
+}
+
+void Gui2DWindow::handleGeometrySelection(const QPointF& pos)
+{
+    selectedGeometryVertex_.reset(); selectedGeometryEdge_.reset(); selectedGeometryPolyline_.reset();
+    clearGeometryPartHighlight();
+    double best = 12.0;
+    const auto screen = view_->mapFromScene(pos);
+    if (selectionMode_ == SelectionMode::GeometryVertex)
+    {
+        for (const auto& v : geometry_.vertices())
+        {
+            if (v.deleted) continue;
+            const double d = QLineF(QPointF(screen), QPointF(view_->mapFromScene(QPointF(v.x,v.y)))).length();
+            if (d < best) { best = d; selectedGeometryVertex_ = v.id; }
+        }
+    }
+    else
+    {
+        for (const auto& e : geometry_.edges())
+        {
+            if (e.deleted) continue;
+            const auto& a = geometry_.vertices().at(e.vertex0);
+            const auto& b = geometry_.vertices().at(e.vertex1);
+            const QPointF p = view_->mapFromScene(QPointF(a.x,a.y));
+            const QPointF q = view_->mapFromScene(QPointF(b.x,b.y));
+            const QPointF d = q-p;
+            const double denom = QPointF::dotProduct(d,d);
+            if (denom < 1e-12) continue;
+            const double t = std::clamp(QPointF::dotProduct(QPointF(screen)-p,d)/denom,0.0,1.0);
+            const double distance = QLineF(QPointF(screen),p+t*d).length();
+            if (distance < best) { best = distance; selectedGeometryEdge_ = e.id; }
+        }
+        if (selectionMode_ == SelectionMode::GeometryPolyline && selectedGeometryEdge_)
+        {
+            const auto eid = *selectedGeometryEdge_;
+            for (const auto& poly : geometry_.polylines())
+                if (!poly.deleted && std::find(poly.edges.begin(),poly.edges.end(),eid)!=poly.edges.end())
+                { selectedGeometryPolyline_ = poly.id; break; }
+            selectedGeometryEdge_.reset();
+        }
+    }
+    if (selectedGeometryPolyline_) highlightGeometryPart(*selectedGeometryPolyline_);
+    else if (selectedGeometryVertex_)
+    {
+        const auto& v = geometry_.vertices().at(*selectedGeometryVertex_);
+        QPen pen(Qt::yellow); pen.setWidth(2); pen.setCosmetic(true);
+        auto* item = scene_->addEllipse(-6,-6,12,12,pen,QBrush(Qt::yellow));
+        item->setPos(v.x,v.y); item->setFlag(QGraphicsItem::ItemIgnoresTransformations,true);
+        item->setZValue(201); geometryHighlightItems_.push_back(item);
+    }
+    else if (selectedGeometryEdge_)
+    {
+        const auto& e = geometry_.edges().at(*selectedGeometryEdge_);
+        const auto& a = geometry_.vertices().at(e.vertex0);
+        const auto& b = geometry_.vertices().at(e.vertex1);
+        QPen pen(Qt::yellow); pen.setWidth(5); pen.setCosmetic(true);
+        auto* item = scene_->addLine(a.x,a.y,b.x,b.y,pen);
+        item->setZValue(201); geometryHighlightItems_.push_back(item);
+    }
+    printSelectedInfo();
+}
+
+void Gui2DWindow::printSelectedInfo()
+{
+    if (selectedGeometryVertex_)
+    {
+        const auto& v = geometry_.vertices().at(*selectedGeometryVertex_);
+        outputText_->append(QString("Geometry vertex %1: (%2, %3)").arg(v.id).arg(v.x).arg(v.y));
+    }
+    else if (selectedGeometryEdge_)
+    {
+        const auto& e = geometry_.edges().at(*selectedGeometryEdge_);
+        const auto& a = geometry_.vertices().at(e.vertex0);
+        const auto& b = geometry_.vertices().at(e.vertex1);
+        outputText_->append(QString("Geometry edge %1: vertices %2-%3, length %4")
+            .arg(e.id).arg(e.vertex0).arg(e.vertex1).arg(QLineF(QPointF(a.x,a.y),QPointF(b.x,b.y)).length()));
+    }
+    else if (selectedGeometryPolyline_)
+    {
+        const auto& p = geometry_.polylines().at(*selectedGeometryPolyline_);
+        double length = 0;
+        for (auto eid : p.edges) if (geometry_.isEdgeActive(eid))
+        {
+            const auto& e = geometry_.edges().at(eid);
+            const auto& a = geometry_.vertices().at(e.vertex0);
+            const auto& b = geometry_.vertices().at(e.vertex1);
+            length += QLineF(QPointF(a.x,a.y),QPointF(b.x,b.y)).length();
+        }
+        outputText_->append(QString("Polyline %1: %2 vertices, %3 edges, length %4, closed=%5, group=%6")
+            .arg(p.id).arg(p.vertices.size()).arg(p.edges.size()).arg(length)
+            .arg(p.closed ? "yes":"no").arg(p.threadID ? QString::number(*p.threadID):"unassigned"));
+    }
+    else if (selectedNode_)
+        outputText_->append(QString("Mesh node %1: (%2,%3), faces=%4, flags=%5")
+            .arg(selectedNode_->id).arg(selectedNode_->x).arg(selectedNode_->y)
+            .arg(selectedNode_->faces.size()).arg(selectedNode_->flags));
+    else if (selectedFace_)
+        outputText_->append(QString("Mesh face %1: nodes %2-%3, owner=%4, neighbor=%5, flags=%6")
+            .arg(selectedFace_->id).arg(selectedFace_->inode ? QString::number(selectedFace_->inode->id):"none")
+            .arg(selectedFace_->jnode ? QString::number(selectedFace_->jnode->id):"none")
+            .arg(selectedFace_->owner ? QString::number(selectedFace_->owner->id):"none")
+            .arg(selectedFace_->neighbor ? QString::number(selectedFace_->neighbor->id):"none")
+            .arg(selectedFace_->flags));
+    else if (selectedCell_)
+        outputText_->append(QString("Mesh cell %1: %2 faces, %3 nodes, flags=%4")
+            .arg(selectedCell_->id).arg(selectedCell_->faces.size()).arg(selectedCell_->nodes.size()).arg(selectedCell_->flags));
+    else
+        outputText_->append("Info: no selected mesh or geometry entity.");
+}
+
+void Gui2DWindow::deleteSelectedEntity()
+{
+    bool ok = false;
+    if (selectedGeometryVertex_) ok = geometry_.deleteVertex(*selectedGeometryVertex_);
+    else if (selectedGeometryEdge_) ok = geometry_.deleteEdge(*selectedGeometryEdge_);
+    else if (selectedGeometryPolyline_) ok = geometry_.deletePolyline(*selectedGeometryPolyline_);
+    if (!ok) { outputText_->append("Delete: select a geometry entity first."); return; }
+    selectedGeometryVertex_.reset(); selectedGeometryEdge_.reset(); selectedGeometryPolyline_.reset();
+    redrawGeometry();
+    const auto errors = geometry_.validate();
+    outputText_->append(QString("Geometry edited. Validation issues: %1").arg(errors.size()));
+    for (const auto& error : errors) outputText_->append(QString::fromStdString(error));
 }

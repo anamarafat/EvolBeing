@@ -93,11 +93,14 @@ namespace geom
             GeometryVertexID vertexID);
 
         void closePolyline(PolylineID polylineID);
+        // Reconnect the last edge to the first vertex; do not allocate an edge.
+        bool closePolylineReusingLastEdge(PolylineID polylineID);
         void discardLastPolyline();
         void clear();
         bool deletePolyline(PolylineID id);
         // Edits preserve existing IDs. New split components receive new IDs.
         bool deleteVertex(GeometryVertexID id);
+        bool moveVertex(GeometryVertexID id, double x, double y);
         bool deleteEdge(GeometryEdgeID id);
         bool isVertexActive(GeometryVertexID id) const noexcept;
         bool isEdgeActive(GeometryEdgeID id) const noexcept;

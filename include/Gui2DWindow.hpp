@@ -58,12 +58,33 @@ class Gui2DWindow : public QMainWindow
             Cell,
             Face,
             Node,
-            DrawLine
+            DrawLine, DrawPolyline, DrawEdge, DrawVertex, GeometryVertex, GeometryEdge, GeometryPolyline
         };
 
         SelectionMode selectionMode_ = SelectionMode::None;
 
         QAction* fitViewAction_ = nullptr;
+        QAction* infoAction_ = nullptr;
+        QAction* snapAction_ = nullptr;
+        QAction* snapAllAction_ = nullptr;
+        QAction* closeAction_ = nullptr;
+        QAction* newEdgeAction_ = nullptr;
+        QAction* drawPolylineAction_ = nullptr;
+        QAction* drawEdgeAction_ = nullptr;
+        QAction* drawVertexAction_ = nullptr;
+        QAction* selectGeometryVertexAction_ = nullptr;
+        QAction* selectGeometryEdgeAction_ = nullptr;
+        QAction* selectGeometryPolylineAction_ = nullptr;
+        std::optional<geom::GeometryVertexID> selectedGeometryVertex_;
+        std::optional<geom::GeometryEdgeID> selectedGeometryEdge_;
+        std::optional<geom::PolylineID> selectedGeometryPolyline_;
+        QPointF nearestMeshNode(const QPointF& point) const;
+        void applySnap();
+        void closeActivePolyline();
+        void printSelectedInfo();
+        void handleGeometrySelection(const QPointF& point);
+        void redrawGeometry();
+        void deleteSelectedEntity();
         QAction* cellSelectAction_ = nullptr;
         QAction* faceSelectAction_ = nullptr;
         QAction* nodeSelectAction_ = nullptr;

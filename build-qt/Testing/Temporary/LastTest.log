@@ -1,10 +1,10 @@
-Start testing: Nov 19 13:59 GMT Standard Time
+Start testing: Nov 19 14:37 GMT Standard Time
 ----------------------------------------------------------
 1/1 Testing: Geometry2DTests
 1/1 Test: Geometry2DTests
 Command: "C:/Dev/EvolBeing/EvolBeing_Gen_alpha/build-qt/Geometry2DTests.exe"
 Directory: C:/Dev/EvolBeing/EvolBeing_Gen_alpha/build-qt
-"Geometry2DTests" start time: Nov 19 13:59 GMT Standard Time
+"Geometry2DTests" start time: Nov 19 14:37 GMT Standard Time
 Output:
 ----------------------------------------------------------
 Geometry2D tests passed
@@ -12,8 +12,8 @@ Geometry2D tests passed
 Test time =   0.03 sec
 ----------------------------------------------------------
 Test Passed.
-"Geometry2DTests" end time: Nov 19 13:59 GMT Standard Time
+"Geometry2DTests" end time: Nov 19 14:37 GMT Standard Time
 "Geometry2DTests" time elapsed: 00:00:00
 ----------------------------------------------------------
 
-End testing: Nov 19 13:59 GMT Standard Time
+End testing: Nov 19 14:37 GMT Standard Time

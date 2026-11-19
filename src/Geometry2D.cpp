@@ -389,78 +389,213 @@ namespace geom
         return id < edges_.size() && !edges_[id].deleted;
     }
 
+    // Retire an orphan vertex only if no active edge or polyline refers to it.
+    // Called after the affected polylines have been reconstructed.
     void Geometry2D::splitPolylineAtEdge(PolylineID id, std::size_t position)
     {
-        // Snapshot before createPolyline(), which may reallocate polylines_.
         const auto old = polylines_.at(id);
         if (position >= old.edges.size()) return;
         if (old.closed)
         {
-            // Removing one edge opens the loop; rotate vertex and edge order.
-            auto& p = polylines_[id];
             std::vector<GeometryVertexID> vs;
             std::vector<GeometryEdgeID> es;
             for (std::size_t k = 0; k < old.vertices.size(); ++k)
                 vs.push_back(old.vertices[(position + 1 + k) % old.vertices.size()]);
             for (std::size_t k = 1; k < old.edges.size(); ++k)
                 es.push_back(old.edges[(position + k) % old.edges.size()]);
+            auto& p = polylines_[id];
             p.vertices = std::move(vs);
             p.edges = std::move(es);
             p.closed = false;
             return;
         }
-        std::vector<GeometryVertexID> leftV(old.vertices.begin(), old.vertices.begin() + position + 1);
-        std::vector<GeometryEdgeID> leftE(old.edges.begin(), old.edges.begin() + position);
-        std::vector<GeometryVertexID> rightV(old.vertices.begin() + position + 1, old.vertices.end());
-        std::vector<GeometryEdgeID> rightE(old.edges.begin() + position + 1, old.edges.end());
-        polylines_[id].vertices = std::move(leftV);
-        polylines_[id].edges = std::move(leftE);
-        if (!rightE.empty())
+        const bool leftValid = position > 0;
+        const bool rightValid = position + 1 < old.edges.size();
+        if (!leftValid && !rightValid)
         {
-            auto newID = createPolyline();
+            deletePolyline(id);
+            return;
+        }
+        if (leftValid)
+        {
+            polylines_[id].vertices.assign(old.vertices.begin(), old.vertices.begin() + position + 1);
+            polylines_[id].edges.assign(old.edges.begin(), old.edges.begin() + position);
+        }
+        else
+        {
+            polylines_[id].vertices.assign(old.vertices.begin() + position + 1, old.vertices.end());
+            polylines_[id].edges.assign(old.edges.begin() + position + 1, old.edges.end());
+        }
+        if (leftValid && rightValid)
+        {
+            const auto newID = createPolyline();
             auto& other = polylines_[newID];
-            other.vertices = std::move(rightV);
-            other.edges = std::move(rightE);
+            other.vertices.assign(old.vertices.begin() + position + 1, old.vertices.end());
+            other.edges.assign(old.edges.begin() + position + 1, old.edges.end());
             other.name = old.name + "_split_" + std::to_string(newID);
             if (old.threadID) assignPolylineToThread(newID, old.threadID);
         }
-        // A single detached vertex is retained as standalone geometry.
     }
 
     bool Geometry2D::deleteEdge(GeometryEdgeID id)
     {
         if (!isEdgeActive(id)) return false;
-        // An edge may be shared by multiple polylines.
-        const std::size_t originalCount = polylines_.size();
+        const auto endpoint0 = edges_[id].vertex0;
+        const auto endpoint1 = edges_[id].vertex1;
+        const auto originalCount = polylines_.size();
         for (std::size_t p = 0; p < originalCount; ++p)
         {
             if (polylines_[p].deleted) continue;
-            auto& edges = polylines_[p].edges;
-            auto it = std::find(edges.begin(), edges.end(), id);
-            if (it != edges.end())
+            const auto& es = polylines_[p].edges;
+            const auto it = std::find(es.begin(), es.end(), id);
+            if (it != es.end())
                 splitPolylineAtEdge(static_cast<PolylineID>(p),
-                    static_cast<std::size_t>(it - edges.begin()));
+                    static_cast<std::size_t>(it - es.begin()));
         }
         edges_[id].deleted = true;
+        // Remove endpoints left without any references, not vertices still in a polyline.
+        for (const auto v : {endpoint0, endpoint1})
+        {
+            bool used = false;
+            for (const auto& e : edges_)
+                if (!e.deleted && (e.vertex0 == v || e.vertex1 == v)) { used = true; break; }
+            if (!used)
+                for (const auto& poly : polylines_)
+                    if (!poly.deleted && std::find(poly.vertices.begin(), poly.vertices.end(), v) != poly.vertices.end())
+                        { used = true; break; }
+            if (!used) vertices_[v].deleted = true;
+        }
         return true;
     }
 
     bool Geometry2D::deleteVertex(GeometryVertexID id)
     {
         if (!isVertexActive(id)) return false;
-        // Delete all incident edges, which splits/opens affected polylines.
-        std::vector<GeometryEdgeID> incident;
-        for (const auto& edge : edges_)
-            if (!edge.deleted && (edge.vertex0 == id || edge.vertex1 == id))
-                incident.push_back(edge.id);
-        for (auto edgeID : incident) deleteEdge(edgeID);
-        // Remove this vertex from any remaining singleton polyline.
-        for (auto& p : polylines_)
+        // Snapshot all affected polylines before editing. Do NOT call deleteEdge()
+        // for each incident edge: that produces intermediate singleton fragments.
+        const auto originalCount = polylines_.size();
+        for (std::size_t pi = 0; pi < originalCount; ++pi)
         {
-            if (p.deleted) continue;
-            p.vertices.erase(std::remove(p.vertices.begin(), p.vertices.end(), id), p.vertices.end());
+            const auto old = polylines_[pi];
+            if (old.deleted) continue;
+            const auto it = std::find(old.vertices.begin(), old.vertices.end(), id);
+            if (it == old.vertices.end()) continue;
+            const auto n = old.vertices.size();
+            const auto at = static_cast<std::size_t>(it - old.vertices.begin());
+            if (old.closed)
+            {
+                // A cycle minus one vertex is exactly one open chain.
+                std::vector<GeometryVertexID> vs;
+                std::vector<GeometryEdgeID> es;
+                for (std::size_t k = 1; k < n; ++k)
+                    vs.push_back(old.vertices[(at + k) % n]);
+                for (std::size_t k = 1; k + 1 < n; ++k)
+                    es.push_back(old.edges[(at + k) % n]);
+                if (es.empty()) deletePolyline(static_cast<PolylineID>(pi));
+                else
+                {
+                    auto& poly = polylines_[pi];
+                    poly.vertices = std::move(vs);
+                    poly.edges = std::move(es);
+                    poly.closed = false;
+                }
+            }
+            else
+            {
+                // Left and right components; only components with edges survive.
+                const bool left = at >= 2;
+                const bool right = at + 2 < n;
+                if (!left && !right)
+                {
+                    deletePolyline(static_cast<PolylineID>(pi));
+                }
+                else
+                {
+                    if (left)
+                    {
+                        polylines_[pi].vertices.assign(old.vertices.begin(), old.vertices.begin() + at);
+                        polylines_[pi].edges.assign(old.edges.begin(), old.edges.begin() + at - 1);
+                    }
+                    else
+                    {
+                        polylines_[pi].vertices.assign(old.vertices.begin() + at + 1, old.vertices.end());
+                        polylines_[pi].edges.assign(old.edges.begin() + at + 1, old.edges.end());
+                    }
+                    if (left && right)
+                    {
+                        const auto newID = createPolyline();
+                        auto& other = polylines_[newID];
+                        other.vertices.assign(old.vertices.begin() + at + 1, old.vertices.end());
+                        other.edges.assign(old.edges.begin() + at + 1, old.edges.end());
+                        other.name = old.name + "_split_" + std::to_string(newID);
+                        if (old.threadID) assignPolylineToThread(newID, old.threadID);
+                    }
+                }
+            }
         }
+        // Retire incident edges that are no longer referenced by any active polyline.
+        for (auto& edge : edges_)
+        {
+            if (edge.deleted || (edge.vertex0 != id && edge.vertex1 != id)) continue;
+            bool referenced = false;
+            for (const auto& poly : polylines_)
+                if (!poly.deleted && std::find(poly.edges.begin(), poly.edges.end(), edge.id) != poly.edges.end())
+                    { referenced = true; break; }
+            if (!referenced) edge.deleted = true;
+        }
+        // A shared vertex may be used by several polylines; the requested vertex
+        // is removed from every affected polyline above.
         vertices_[id].deleted = true;
+        // Remove newly orphaned vertices, including isolated endpoints.
+        for (auto& vertex : vertices_)
+        {
+            if (vertex.deleted) continue;
+            bool used = false;
+            for (const auto& e : edges_)
+                if (!e.deleted && (e.vertex0 == vertex.id || e.vertex1 == vertex.id)) { used = true; break; }
+            if (!used)
+                for (const auto& poly : polylines_)
+                    if (!poly.deleted && std::find(poly.vertices.begin(), poly.vertices.end(), vertex.id) != poly.vertices.end())
+                        { used = true; break; }
+            if (!used) vertex.deleted = true;
+        }
+        return true;
+    }
+
+    bool Geometry2D::closePolylineReusingLastEdge(PolylineID id)
+    {
+        if (id >= polylines_.size()) return false;
+        auto& poly = polylines_[id];
+        if (poly.deleted || poly.closed || poly.vertices.size() < 4 ||
+            poly.edges.size() + 1 != poly.vertices.size()) return false;
+        const auto first = poly.vertices.front();
+        const auto penultimate = poly.vertices[poly.vertices.size() - 2];
+        const auto last = poly.vertices.back();
+        if (first == penultimate) return false;
+        const auto& a = vertices_.at(first);
+        const auto& b = vertices_.at(penultimate);
+        if (a.x == b.x && a.y == b.y) return false;
+        const auto edgeID = poly.edges.back();
+        if (!isEdgeActive(edgeID)) return false;
+        auto& edge = edges_[edgeID];
+        // Avoid changing an edge shared by another active polyline.
+        for (const auto& other : polylines_)
+            if (!other.deleted && other.id != id &&
+                std::find(other.edges.begin(), other.edges.end(), edgeID) != other.edges.end())
+                return false;
+        if (edge.vertex0 == last) edge.vertex0 = first;
+        else if (edge.vertex1 == last) edge.vertex1 = first;
+        else return false;
+        poly.vertices.pop_back();
+        poly.closed = true;
+        bool referenced = false;
+        for (const auto& e : edges_)
+            if (!e.deleted && (e.vertex0 == last || e.vertex1 == last)) { referenced = true; break; }
+        if (!referenced)
+            for (const auto& other : polylines_)
+                if (!other.deleted && std::find(other.vertices.begin(), other.vertices.end(), last) != other.vertices.end())
+                    { referenced = true; break; }
+        if (!referenced) vertices_[last].deleted = true;
         return true;
     }
 
@@ -506,4 +641,14 @@ namespace geom
         }
         return errors;
     }
+}
+
+namespace geom {
+bool Geometry2D::moveVertex(GeometryVertexID id, double x, double y)
+{
+    if (!isVertexActive(id) || !std::isfinite(x) || !std::isfinite(y)) return false;
+    vertices_[id].x = x;
+    vertices_[id].y = y;
+    return true;
+}
 }

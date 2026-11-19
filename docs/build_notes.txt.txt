@@ -21,6 +21,17 @@ Location:
 C:\Dev\EvolBeing\EvolBeing_Gen_alpha
 
 
-
+standard build and run:
+call "C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
 cmake -S . -B build-qt
 cmake --build build-qt
+.\build-qt\EvolBeing_Gen_Alpha.exe
+
+
+Apply patch:
+tar -xf "%USERPROFILE%\Downloads\EvolBeing_Stage1_Geometry2D_patch.zip" -C .
+
+Test: 
+cmake -S . -B build-qt -DBUILD_TESTING=ON
+cmake --build build-qt
+ctest --test-dir build-qt --output-on-failure

@@ -41,6 +41,7 @@ namespace geom
 
         double x = 0.0;
         double y = 0.0;
+        bool deleted = false;
     };
 
     // ----------------------------------------
@@ -52,6 +53,7 @@ namespace geom
 
         GeometryVertexID vertex0 = 0;
         GeometryVertexID vertex1 = 0;
+        bool deleted = false;
     };
 
     // ----------------------------------------
@@ -94,6 +96,12 @@ namespace geom
         void discardLastPolyline();
         void clear();
         bool deletePolyline(PolylineID id);
+        // Edits preserve existing IDs. New split components receive new IDs.
+        bool deleteVertex(GeometryVertexID id);
+        bool deleteEdge(GeometryEdgeID id);
+        bool isVertexActive(GeometryVertexID id) const noexcept;
+        bool isEdgeActive(GeometryEdgeID id) const noexcept;
+        std::vector<std::string> validate() const;
         bool deleteThread(GeometryThreadID id);
 
         GeometryThreadID createThread(const std::string& name);
@@ -129,5 +137,6 @@ namespace geom
         std::vector<Polyline2D> polylines_;
         std::vector<GeometryThread2D> threads_;
         GeometryThreadID nextThreadID_ = 0;
+        void splitPolylineAtEdge(PolylineID id, std::size_t edgePosition);
     };
 }

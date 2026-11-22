@@ -108,6 +108,12 @@ Gui2DWindow::Gui2DWindow(QWidget* parent)
     meshView->setClickHandler(
         [this](const QPointF& scenePos)
         {
+            if (regionPickHandler_) {
+                auto callback = std::move(regionPickHandler_);
+                regionPickHandler_ = {};
+                callback(scenePos);
+                return;
+            }
             handleMeshClick(scenePos);
         });
 
@@ -406,6 +412,21 @@ Gui2DWindow::Gui2DWindow(QWidget* parent)
     geometryRootNode_->setExpanded(true);
     unassignedNode_->setExpanded(true);
 
+
+    // Compute Mesh workflow: region seeds are independent of geometry polygons.
+    computeMeshNode_ = new QTreeWidgetItem(workflowTree_);
+    computeMeshNode_->setText(0, "Compute Mesh");
+    regionsNode_ = new QTreeWidgetItem(computeMeshNode_);
+    regionsNode_->setText(0, "Regions");
+    computeMeshNode_->setExpanded(true);
+    regionsNode_->setExpanded(true);
+
+    connect(workflowTree_, &QTreeWidget::itemClicked,
+            this, [this](QTreeWidgetItem* item, int) {
+        if (!item || item->data(0, Qt::UserRole).toString() != "region")
+            return;
+        toggleRegionHighlight(item->data(0, Qt::UserRole + 1).toUInt());
+    });
 
     // Add workflow tree to panel
     panelLayout->addWidget(workflowTree_, 1);
@@ -1574,6 +1595,23 @@ void Gui2DWindow::showGeometryContextMenu(
 
     QMenu menu(this);
 
+    if (item == regionsNode_) {
+        menu.addAction("New Region...", this, &Gui2DWindow::createRegion);
+        menu.exec(workflowTree_->viewport()->mapToGlobal(pos));
+        return;
+    }
+    if (item->data(0, Qt::UserRole).toString() == "region") {
+        const auto id = item->data(0, Qt::UserRole + 1).toUInt();
+        menu.addAction("Properties...", this, [this, id] { editRegion(id); });
+        menu.exec(workflowTree_->viewport()->mapToGlobal(pos));
+        return;
+    }
+    if (item == computeMeshNode_) {
+        menu.addAction("New Region...", this, &Gui2DWindow::createRegion);
+        menu.exec(workflowTree_->viewport()->mapToGlobal(pos));
+        return;
+    }
+
     if (item == geometryRootNode_)
     {
         menu.addAction("Validate Geometry", this, &Gui2DWindow::validateGeometryFromMenu);
@@ -2304,4 +2342,249 @@ void Gui2DWindow::connectNodesClick(const QPointF& pos)
     geometry_.appendVertexToPolyline(id,*chosen);
     redrawGeometry();
     outputText_->append(QString("Connected geometry vertices %1 and %2 (polyline %3).").arg(first).arg(*chosen).arg(id));
+}
+
+
+void Gui2DWindow::clearRegionHighlight()
+{
+    if (regionSeedHighlight_) {
+        scene_->removeItem(regionSeedHighlight_);
+        delete regionSeedHighlight_;
+        regionSeedHighlight_ = nullptr;
+    }
+    highlightedRegionId_.reset();
+}
+
+void Gui2DWindow::toggleRegionHighlight(std::uint32_t id)
+{
+    if (highlightedRegionId_ && *highlightedRegionId_ == id) {
+        clearRegionHighlight();
+        return;
+    }
+    clearRegionHighlight();
+    auto it = std::find_if(regionSeeds_.begin(), regionSeeds_.end(),
+        [id](const RegionSeed& r) { return r.id == id; });
+    if (it == regionSeeds_.end()) return;
+
+    // The only region marker: created on selection, deleted on deselection.
+    regionSeedHighlight_ = scene_->addEllipse(-5, -5, 10, 10,
+        QPen(Qt::magenta, 2), QBrush(Qt::yellow));
+    regionSeedHighlight_->setPos(it->vertex);
+    regionSeedHighlight_->setZValue(2000);
+    regionSeedHighlight_->setFlag(QGraphicsItem::ItemIgnoresTransformations);
+    highlightedRegionId_ = id;
+}
+
+void Gui2DWindow::refreshRegionsTree()
+{
+    if (!regionsNode_) return;
+    // Do not destroy the highlight when rebuilding the tree.
+    while (regionsNode_->childCount() > 0)
+        delete regionsNode_->takeChild(0);
+    for (const auto& region : regionSeeds_) {
+        auto* item = new QTreeWidgetItem(regionsNode_);
+        item->setText(0, QString("%1 (%2)").arg(region.name,
+            region.type == RegionType::Live ? "Live" :
+            region.type == RegionType::Dead ? "Dead" : "Obstacle"));
+        item->setData(0, Qt::UserRole, "region");
+        item->setData(0, Qt::UserRole + 1, region.id);
+        item->setToolTip(0, QString("Seed: (%1, %2)")
+            .arg(region.vertex.x()).arg(region.vertex.y()));
+    }
+    regionsNode_->setExpanded(true);
+}
+
+void Gui2DWindow::createRegion()
+{
+    // Non-modal, heap-owned dialog: viewport clicks remain available.
+    auto* dialog = new QDialog(this);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->setWindowTitle("New Region");
+    auto* layout = new QVBoxLayout(dialog);
+    auto* form = new QFormLayout();
+    auto* name = new QLineEdit(QString("Region %1").arg(nextRegionId_), dialog);
+    
+    auto* x = new QDoubleSpinBox(dialog);
+    auto* y = new QDoubleSpinBox(dialog);
+    for (auto* spin : {x, y}) { spin->setRange(-1e9, 1e9); spin->setDecimals(6); }
+
+    // Temporary vertex marker while the dialog is open.
+    auto* previewMarker = scene_->addEllipse(
+        -5.0, -5.0, 10.0, 10.0,
+        QPen(Qt::magenta, 2),
+        QBrush(Qt::yellow)
+    );
+
+    previewMarker->setZValue(2001);
+    previewMarker->setFlag(
+        QGraphicsItem::ItemIgnoresTransformations
+    );
+
+    // Initially show the marker at the entered coordinates.
+    previewMarker->setPos(x->value(), y->value());
+
+    // Move the marker whenever the coordinates change.
+    auto updatePreview = [previewMarker, x, y]()
+    {
+        previewMarker->setPos(x->value(), y->value());
+    };
+
+    connect(x, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+            dialog, updatePreview);
+
+    connect(y, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+            dialog, updatePreview);
+
+
+    auto* type = new QComboBox(dialog);
+    type->addItems({"Live", "Dead", "Obstacle"});
+    form->addRow("Region name:", name);
+    form->addRow("Vertex X:", x);
+    form->addRow("Vertex Y:", y);
+    form->addRow("Region type:", type);
+    layout->addLayout(form);
+    auto* pick = new QPushButton("Pick vertex in simulation view", dialog);
+    layout->addWidget(pick);
+    auto* hint = new QLabel("Enter coordinates, or click Pick then click the simulation view.", dialog);
+    layout->addWidget(hint);
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel,
+                                         Qt::Horizontal, dialog);
+    layout->addWidget(buttons);
+
+    connect(pick, &QPushButton::clicked, dialog, [this, dialog, x, y, hint] {
+        hint->setText("Click a location in the simulation view...");
+        regionPickHandler_ = [dialog, x, y, hint](const QPointF& p) {
+            x->setValue(p.x());
+            y->setValue(p.y());
+            hint->setText("Vertex selected. Click OK to save.");
+            dialog->raise();
+            dialog->activateWindow();
+        };
+        this->raise();
+        this->activateWindow();
+        view_->setFocus();
+    });
+    connect(buttons, &QDialogButtonBox::accepted, dialog, [this, dialog, name, x, y, type] {
+        if (name->text().trimmed().isEmpty()) {
+            QMessageBox::warning(dialog, "Region", "Enter a region name.");
+            return;
+        }
+        RegionSeed candidate{nextRegionId_++, name->text().trimmed(),
+                             QPointF(x->value(), y->value()),
+                             static_cast<RegionType>(type->currentIndex())};
+        regionSeeds_.push_back(std::move(candidate));
+        refreshRegionsTree();
+        dialog->accept();
+    });
+    connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
+    connect(dialog, &QDialog::finished, this,
+    [this, previewMarker](int)
+    {
+        regionPickHandler_ = {};
+
+        // Remove temporary vertex from scene.
+        scene_->removeItem(previewMarker);
+        delete previewMarker;
+    });
+    dialog->show();
+}
+
+void Gui2DWindow::editRegion(std::uint32_t id)
+{
+    auto it = std::find_if(regionSeeds_.begin(), regionSeeds_.end(),
+        [id](const RegionSeed& r) { return r.id == id; });
+    if (it == regionSeeds_.end()) return;
+
+    auto* dialog = new QDialog(this);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->setWindowTitle("Region Properties");
+    auto* layout = new QVBoxLayout(dialog);
+    auto* form = new QFormLayout();
+    auto* name = new QLineEdit(it->name, dialog);
+    auto* x = new QDoubleSpinBox(dialog);
+    auto* y = new QDoubleSpinBox(dialog);
+    for (auto* spin : {x, y}) { spin->setRange(-1e9, 1e9); spin->setDecimals(6); }
+    // Temporary vertex marker while the dialog is open.
+    auto* previewMarker = scene_->addEllipse(
+        -5.0, -5.0, 10.0, 10.0,
+        QPen(Qt::magenta, 2),
+        QBrush(Qt::yellow)
+    );
+
+    previewMarker->setZValue(2001);
+    previewMarker->setFlag(
+        QGraphicsItem::ItemIgnoresTransformations
+    );
+
+    // Initially show the marker at the entered coordinates.
+    previewMarker->setPos(x->value(), y->value());
+
+    // Move the marker whenever the coordinates change.
+    auto updatePreview = [previewMarker, x, y]()
+    {
+        previewMarker->setPos(x->value(), y->value());
+    };
+
+    connect(x, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+            dialog, updatePreview);
+
+    connect(y, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+            dialog, updatePreview);
+
+    x->setValue(it->vertex.x());
+    y->setValue(it->vertex.y());
+    auto* type = new QComboBox(dialog);
+    type->addItems({"Live", "Dead", "Obstacle"});
+    type->setCurrentIndex(static_cast<int>(it->type));
+    form->addRow("Region name:", name);
+    form->addRow("Vertex X:", x);
+    form->addRow("Vertex Y:", y);
+    form->addRow("Region type:", type);
+    layout->addLayout(form);
+    auto* pick = new QPushButton("Pick vertex in simulation view", dialog);
+    layout->addWidget(pick);
+    auto* hint = new QLabel("Enter coordinates, or click Pick then click the simulation view.", dialog);
+    layout->addWidget(hint);
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel,
+                                         Qt::Horizontal, dialog);
+    layout->addWidget(buttons);
+
+    connect(pick, &QPushButton::clicked, dialog, [this, dialog, x, y, hint] {
+        hint->setText("Click a location in the simulation view...");
+        regionPickHandler_ = [dialog, x, y, hint](const QPointF& p) {
+            x->setValue(p.x());
+            y->setValue(p.y());
+            hint->setText("Vertex selected. Click OK to save.");
+            dialog->raise();
+            dialog->activateWindow();
+        };
+        this->raise();
+        this->activateWindow();
+        view_->setFocus();
+    });
+    connect(buttons, &QDialogButtonBox::accepted, dialog, [this, dialog, id, name, x, y, type] {
+        if (name->text().trimmed().isEmpty()) {
+            QMessageBox::warning(dialog, "Region", "Enter a region name.");
+            return;
+        }
+        auto found = std::find_if(regionSeeds_.begin(), regionSeeds_.end(),
+            [id](const RegionSeed& r) { return r.id == id; });
+        if (found == regionSeeds_.end()) { dialog->reject(); return; }
+        found->name = name->text().trimmed();
+        found->vertex = QPointF(x->value(), y->value());
+        found->type = static_cast<RegionType>(type->currentIndex());
+        if (highlightedRegionId_ && *highlightedRegionId_ == id) {
+            clearRegionHighlight();
+            toggleRegionHighlight(id);
+        }
+        refreshRegionsTree();
+        dialog->accept();
+    });
+    connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
+    connect(dialog, &QDialog::finished, this, [this, previewMarker](int) 
+    { 
+        regionPickHandler_ = {}; 
+        scene_->removeItem(previewMarker); delete previewMarker; 
+    });
+    dialog->show();
 }

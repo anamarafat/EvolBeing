@@ -11,6 +11,8 @@
 #include <QPointF>
 #include <optional>
 #include <vector>
+#include <functional>
+#include <cstdint>
 
 class QGraphicsScene;
 class QGraphicsView;
@@ -42,6 +44,26 @@ class Gui2DWindow : public QMainWindow
         std::optional<geom::GeometryVertexID> connectStart_;
         QString geometryFilePath_;
 
+
+        enum class RegionType { Live, Dead, Obstacle };
+        struct RegionSeed {
+            std::uint32_t id;
+            QString name;
+            QPointF vertex;
+            RegionType type;
+        };
+        std::vector<RegionSeed> regionSeeds_;
+        std::uint32_t nextRegionId_ = 1;
+        QTreeWidgetItem* computeMeshNode_ = nullptr;
+        QTreeWidgetItem* regionsNode_ = nullptr;
+        std::optional<std::uint32_t> highlightedRegionId_;
+        QGraphicsEllipseItem* regionSeedHighlight_ = nullptr;
+        std::function<void(const QPointF&)> regionPickHandler_;
+        void createRegion();
+        void editRegion(std::uint32_t id);
+        void refreshRegionsTree();
+        void toggleRegionHighlight(std::uint32_t id);
+        void clearRegionHighlight();
 
         // 2D canvas
         QGraphicsScene* scene_ = nullptr;

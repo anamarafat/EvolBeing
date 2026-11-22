@@ -66,21 +66,36 @@
 Gui2DWindow::Gui2DWindow(QWidget* parent)
     : QMainWindow(parent)
 {
-    qDebug() << "Gui2DWindow constructor START";
     setWindowTitle("EvolBeing - GUI2D");
     resize(1100, 750);
 
-    // ========================================
-    // Main container and layout
-    // ========================================
-
     auto* central = new QWidget(this);
     auto* mainLayout = new QHBoxLayout(central);
+    auto* leftPanel = new QWidget(central);
+    auto* leftLayout = new QVBoxLayout(leftPanel);
+    leftLayout->setContentsMargins(0, 0, 0, 0);
+    leftLayout->setSpacing(5);
 
-    // ========================================
-    // Left: 2D viewport
-    // ========================================
+    setupSimulationView(leftPanel);
+    setupMenus();
+    auto* meshToolbar = createMeshToolbar(leftPanel);
+    auto* geometryToolbar = createGeometryToolbar(leftPanel);
+    configureToolModes();
+    auto* analyzeToolbar = createAnalyzeToolbar(leftPanel);
 
+    leftLayout->addWidget(meshToolbar);
+    leftLayout->addWidget(geometryToolbar);
+    leftLayout->addWidget(view_, 1);
+    leftLayout->addWidget(analyzeToolbar);
+    setupOutputPanel(leftPanel, leftLayout);
+    mainLayout->addWidget(leftPanel, 1);
+
+    setupWorkflowPanel(central, mainLayout);
+    setCentralWidget(central);
+}
+
+void Gui2DWindow::setupSimulationView(QWidget* leftPanel)
+{
     scene_ = new QGraphicsScene(this);
 
     // Light gray background
@@ -89,16 +104,6 @@ Gui2DWindow::Gui2DWindow(QWidget* parent)
     // Initial empty scene
     scene_->setSceneRect(0, 0, 800, 600);
 
-
-    // Left side container
-    auto* leftPanel = new QWidget(central);
-
-    // Vertical layout: viewport above, output below
-    auto* leftLayout = new QVBoxLayout(leftPanel);
-
-    // Remove unnecessary margins
-    leftLayout->setContentsMargins(0, 0, 0, 0);
-    leftLayout->setSpacing(5);
 
     // Graphics viewport
     view_ = new MeshGraphicsView(leftPanel);
@@ -135,6 +140,10 @@ Gui2DWindow::Gui2DWindow(QWidget* parent)
             cancelDrawing();
         });
 
+}
+
+void Gui2DWindow::setupMenus()
+{
     // Stage 4: independent single-row menu, mesh and geometry toolbars.
     auto* fileMenu = menuBar()->addMenu("File");
     fileMenu->addAction("Load Geometry...", this, &Gui2DWindow::loadGeometry);
@@ -146,12 +155,24 @@ Gui2DWindow::Gui2DWindow(QWidget* parent)
     auto* redoAction = editMenu->addAction("Redo", this, &Gui2DWindow::redoGeometry);
     redoAction->setShortcut(QKeySequence::Redo);
 
+}
+
+QToolBar* Gui2DWindow::createMeshToolbar(QWidget* leftPanel)
+{
     // Toolbar for mesh viewing and selection
     QToolBar* meshToolbar = new QToolBar(leftPanel);
     meshToolbar->setMovable(false);
 
     meshToolbar->setFloatable(false);
     meshToolbar->setToolButtonStyle(Qt::ToolButtonTextOnly);
+
+    auto* meshLabel = new QLabel("Mesh", this);
+    QFont font = meshLabel->font();
+    font.setBold(true);
+    meshLabel->setFont(font);
+    meshToolbar->addWidget(meshLabel);
+    meshToolbar->addSeparator();
+
     meshToolbar->addAction("Generate Mesh")->setEnabled(false); // placeholder
     auto* showMeshAction = meshToolbar->addAction("Show Mesh");
     showMeshAction->setObjectName("showMeshVisibility");
@@ -162,20 +183,29 @@ Gui2DWindow::Gui2DWindow(QWidget* parent)
     });
     // Fit view button
     fitViewAction_ = meshToolbar->addAction("Fit View");
+    meshToolbar->addSeparator();
+    cellSelectAction_ = meshToolbar->addAction("Cell");
+    faceSelectAction_ = meshToolbar->addAction("Face");
+    nodeSelectAction_ = meshToolbar->addAction("Node");
+    return meshToolbar;
+}
+
+QToolBar* Gui2DWindow::createGeometryToolbar(QWidget* leftPanel)
+{
     QToolBar* geometryToolbar = new QToolBar(leftPanel);
     geometryToolbar->setMovable(false);
     geometryToolbar->setFloatable(false);
     geometryToolbar->setToolButtonStyle(Qt::ToolButtonTextOnly);
-    infoAction_ = geometryToolbar->addAction("Info");
-    meshToolbar->addSeparator();
 
-    // Selection buttons
-    cellSelectAction_ = meshToolbar->addAction("Cell");
-    faceSelectAction_ = meshToolbar->addAction("Face");
-    nodeSelectAction_ = meshToolbar->addAction("Node");
+    //title
+    auto* geomLabel = new QLabel("Geom", this);
+    QFont font = geomLabel->font();
+    font.setBold(true);
+    geomLabel->setFont(font);
+    geometryToolbar->addWidget(geomLabel);
+    geometryToolbar->addSeparator();
 
     // Geometry drawing button
-    geometryToolbar->addSeparator();
     drawLineAction_ = geometryToolbar->addAction("Draw Line");
     drawPolylineAction_ = geometryToolbar->addAction("Polyline");
     drawEdgeAction_ = geometryToolbar->addAction("Draw Edge");
@@ -185,7 +215,7 @@ Gui2DWindow::Gui2DWindow(QWidget* parent)
     selectGeometryEdgeAction_ = geometryToolbar->addAction("Select Edge");
     selectGeometryPolylineAction_ = geometryToolbar->addAction("Select Polyline");
     geometryToolbar->addSeparator();
-    auto* connectNodesAction = geometryToolbar->addAction("Connect Nodes");
+    connectNodesAction_ = geometryToolbar->addAction("Connect Nodes");
     auto* snapButton = new QToolButton(geometryToolbar);
     snapButton->setText("Snap");
     snapButton->setPopupMode(QToolButton::MenuButtonPopup);
@@ -207,8 +237,29 @@ Gui2DWindow::Gui2DWindow(QWidget* parent)
     connect(closeButton, &QToolButton::clicked, this, &Gui2DWindow::closeActivePolyline);
     auto* deleteEntityAction = geometryToolbar->addAction("Delete Entity");
     connect(deleteEntityAction, &QAction::triggered, this, &Gui2DWindow::deleteSelectedEntity);
-    connect(infoAction_, &QAction::triggered, this, &Gui2DWindow::printSelectedInfo);
 
+    finalizeGeometryAction_ = geometryToolbar->addAction("Finalize Geom");
+    connect(finalizeGeometryAction_, &QAction::triggered,
+            this, &Gui2DWindow::finalizeGeometryForWorkflow);
+    return geometryToolbar;
+}
+
+QToolBar* Gui2DWindow::createAnalyzeToolbar(QWidget* leftPanel)
+{
+    auto* analyzeToolbar = new QToolBar(leftPanel);
+    analyzeToolbar->setMovable(false);
+    analyzeToolbar->setFloatable(false);
+    analyzeToolbar->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    analyzeToolbar->addWidget(new QLabel("Analyze  ", analyzeToolbar));
+    analyzeToolbar->addSeparator();
+    infoAction_ = analyzeToolbar->addAction("Info");
+    connect(infoAction_, &QAction::triggered,
+            this, &Gui2DWindow::printSelectedInfo);
+    return analyzeToolbar;
+}
+
+void Gui2DWindow::configureToolModes()
+{
     // Allow buttons to remain pressed/highlighted
     cellSelectAction_->setCheckable(true);
     faceSelectAction_->setCheckable(true);
@@ -226,8 +277,8 @@ Gui2DWindow::Gui2DWindow(QWidget* parent)
     selectionGroup->addAction(cellSelectAction_);
     selectionGroup->addAction(faceSelectAction_);
     selectionGroup->addAction(nodeSelectAction_);
-    connectNodesAction->setCheckable(true);
-    selectionGroup->addAction(connectNodesAction);
+    connectNodesAction_->setCheckable(true);
+    selectionGroup->addAction(connectNodesAction_);
     selectionGroup->addAction(drawLineAction_);
     for (auto* action : {drawPolylineAction_, drawEdgeAction_, drawVertexAction_,
                          selectGeometryVertexAction_, selectGeometryEdgeAction_, selectGeometryPolylineAction_})
@@ -274,7 +325,7 @@ Gui2DWindow::Gui2DWindow(QWidget* parent)
     connectTool(cellSelectAction_, SelectionMode::Cell);
     connectTool(faceSelectAction_, SelectionMode::Face);
     connectTool(nodeSelectAction_, SelectionMode::Node);
-    connectTool(connectNodesAction, SelectionMode::ConnectNodes);
+    connectTool(connectNodesAction_, SelectionMode::ConnectNodes);
     connectTool(drawLineAction_, SelectionMode::DrawLine);
     connectTool(drawPolylineAction_, SelectionMode::DrawPolyline);
     connectTool(drawEdgeAction_, SelectionMode::DrawEdge);
@@ -283,37 +334,34 @@ Gui2DWindow::Gui2DWindow(QWidget* parent)
     connectTool(selectGeometryEdgeAction_, SelectionMode::GeometryEdge);
     connectTool(selectGeometryPolylineAction_, SelectionMode::GeometryPolyline);
 
-    // Viewport takes all remaining vertical space
-    leftLayout->addWidget(meshToolbar);
-    leftLayout->addWidget(geometryToolbar);
-    leftLayout->addWidget(view_, 1);
+}
 
-    // Create output panel
+void Gui2DWindow::setupOutputPanel(QWidget* leftPanel, QVBoxLayout* leftLayout)
+{
     outputText_ = new QTextEdit(leftPanel);
     outputText_->setReadOnly(true);
     outputText_->setFixedHeight(120);
     outputText_->setPlaceholderText("Output messages will appear here...");
+    leftLayout->addWidget(outputText_);
+}
 
-
-    // Output stays below viewport
-    leftLayout->addWidget(outputText_, 0);
-
-    // Add entire left panel to main horizontal layout
-    mainLayout->addWidget(leftPanel, 1);
-
-    // ========================================
-    // Right: control panel
-    // ========================================
-
+void Gui2DWindow::setupWorkflowPanel(QWidget* central, QHBoxLayout* mainLayout)
+{
     auto* panel = new QWidget(central);
     panel->setFixedWidth(240);
-
     auto* panelLayout = new QVBoxLayout(panel);
+    panelLayout->addWidget(new QLabel("Workflow", panel));
+    setupWorkflowTree(panel);
+    panelLayout->addWidget(workflowTree_, 1);
+    applyButton_ = new QPushButton("Apply", panel);
+    panelLayout->addWidget(applyButton_);
+    mainLayout->addWidget(panel);
+    connect(applyButton_, &QPushButton::clicked,
+            this, &Gui2DWindow::createBoundingBox);
+}
 
-   // Workflow heading
-    auto* workflowLabel = new QLabel("Workflow", panel);
-    panelLayout->addWidget(workflowLabel);
-
+void Gui2DWindow::setupWorkflowTree(QWidget* panel)
+{
     // Create workflow tree
     workflowTree_ = new QTreeWidget(panel);
     workflowTree_->setColumnCount(1);
@@ -418,7 +466,8 @@ Gui2DWindow::Gui2DWindow(QWidget* parent)
     computeMeshNode_->setText(0, "Compute Mesh");
     regionsNode_ = new QTreeWidgetItem(computeMeshNode_);
     regionsNode_->setText(0, "Regions");
-    computeMeshNode_->setExpanded(true);
+    computeMeshNode_->setDisabled(true);
+    computeMeshNode_->setExpanded(false);
     regionsNode_->setExpanded(true);
 
     connect(workflowTree_, &QTreeWidget::itemClicked,
@@ -428,27 +477,20 @@ Gui2DWindow::Gui2DWindow(QWidget* parent)
         toggleRegionHighlight(item->data(0, Qt::UserRole + 1).toUInt());
     });
 
-    // Add workflow tree to panel
-    panelLayout->addWidget(workflowTree_, 1);
-
-    // Apply button at the bottom
-    applyButton_ = new QPushButton("Apply", panel);
-    panelLayout->addWidget(applyButton_);
-
-    // Add right panel to main horizontal layout
-    mainLayout->addWidget(panel);
-
-    // Connect Apply to existing function
-    connect(applyButton_,
-            &QPushButton::clicked,
-            this,
-            &Gui2DWindow::createBoundingBox);
-
-    setCentralWidget(central);
-    
-    qDebug() << "Gui2DWindow constructor END";
 }
 
+void Gui2DWindow::finalizeGeometryForWorkflow()
+{
+    // GUI-only gate. Geometry validation, loop construction and half-edges
+    // will be added to this function in a later development step.
+    geometryFinalized_ = true;
+    if (computeMeshNode_) {
+        computeMeshNode_->setDisabled(false);
+        computeMeshNode_->setExpanded(true);
+    }
+    if (outputText_)
+        outputText_->append("Finalize Geom: Compute Mesh enabled (geometry processing not yet implemented).");
+}
 
 // ============================================
 // Create or update the bounding box
@@ -1591,6 +1633,12 @@ void Gui2DWindow::showGeometryContextMenu(
         workflowTree_->itemAt(pos);
 
     if (!item)
+        return;
+
+    // Disabled Compute Mesh items cannot be operated through the context menu.
+    if (computeMeshNode_ && !geometryFinalized_ &&
+        (item == computeMeshNode_ || item == regionsNode_ ||
+         item->parent() == regionsNode_))
         return;
 
     QMenu menu(this);

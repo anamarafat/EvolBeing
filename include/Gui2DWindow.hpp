@@ -14,6 +14,10 @@
 #include <functional>
 #include <cstdint>
 
+class QToolBar;
+class QVBoxLayout;
+class QHBoxLayout;
+class QWidget;
 class QGraphicsScene;
 class QGraphicsView;
 class QGraphicsRectItem;
@@ -31,6 +35,20 @@ class Gui2DWindow : public QMainWindow
         explicit Gui2DWindow(QWidget* parent = nullptr);
 
     private:
+        // GUI construction: keep the constructor limited to composition.
+        void setupSimulationView(QWidget* leftPanel);
+        void setupMenus();
+        QToolBar* createMeshToolbar(QWidget* leftPanel);
+        QToolBar* createGeometryToolbar(QWidget* leftPanel);
+        QToolBar* createAnalyzeToolbar(QWidget* leftPanel);
+        void configureToolModes();
+        void setupOutputPanel(QWidget* leftPanel, QVBoxLayout* leftLayout);
+        void setupWorkflowPanel(QWidget* central, QHBoxLayout* mainLayout);
+        void setupWorkflowTree(QWidget* panel);
+        void finalizeGeometryForWorkflow();
+        bool geometryFinalized_ = false;
+        QAction* finalizeGeometryAction_ = nullptr;
+        QAction* connectNodesAction_ = nullptr;
         geom::CartesianGrid grid_;
         geom::Geometry2D geometry_;
         std::vector<geom::Geometry2D> undoHistory_, redoHistory_;

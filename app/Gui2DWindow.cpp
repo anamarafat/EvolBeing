@@ -62,6 +62,7 @@
 #include <QSignalBlocker>
 #include <QGraphicsLineItem>
 #include <QGraphicsEllipseItem>
+#include <QSettings>
 
 Gui2DWindow::Gui2DWindow(QWidget* parent)
     : QMainWindow(parent)
@@ -77,6 +78,7 @@ Gui2DWindow::Gui2DWindow(QWidget* parent)
     leftLayout->setSpacing(5);
 
     setupSimulationView(leftPanel);
+    applySimulationTheme();
     setupMenus();
     auto* meshToolbar = createMeshToolbar(leftPanel);
     auto* geometryToolbar = createGeometryToolbar(leftPanel);
@@ -94,12 +96,67 @@ Gui2DWindow::Gui2DWindow(QWidget* parent)
     setCentralWidget(central);
 }
 
+void Gui2DWindow::applySimulationTheme()
+{
+    // Settings are stored per user; no separate namespace or global theme object.
+    QSettings settings("EvolBeing", "EvolBeing_Gen_Alpha");
+    const int stored = settings.value("simulation/theme", 0).toInt();
+    if (stored >= 0 && stored <= 2)
+        themePreset_ = static_cast<ThemePreset>(stored);
+    updateSimulationTheme();
+}
+
+void Gui2DWindow::setSimulationTheme(ThemePreset preset)
+{
+    themePreset_ = preset;
+    QSettings settings("EvolBeing", "EvolBeing_Gen_Alpha");
+    settings.setValue("simulation/theme", static_cast<int>(preset));
+    updateSimulationTheme();
+}
+
+void Gui2DWindow::updateSimulationTheme()
+{
+    switch (themePreset_) {
+    case ThemePreset::SlateDark:
+        theme_ = {QColor("#303A46"), QColor("#34584F"), QColor("#46515E"),
+                  QColor("#796044"), QColor("#62717F"), QColor("#FFB36B"),
+                  QColor("#00E5FF"), QColor("#D7E0E8")};
+        break;
+    case ThemePreset::DeepDark:
+        theme_ = {QColor("#111820"), QColor("#193D36"), QColor("#25313D"),
+                  QColor("#65502D"), QColor("#40505D"), QColor("#F0A35E"),
+                  QColor("#00E5FF"), QColor("#D7E0E8")};
+        break;
+    case ThemePreset::LightGrey:
+        theme_ = {QColor("#DCE2E8"), QColor("#B5D5C7"), QColor("#C6CFD8"),
+                  QColor("#E3CC9E"), QColor("#9CAAB7"), QColor("#B35D20"),
+                  QColor("#007C99"), QColor("#586774")};
+        break;
+    }
+
+    if (scene_)
+        scene_->setBackgroundBrush(theme_.background);
+    if (view_) {
+        view_->setBackgroundBrush(theme_.background);
+        view_->viewport()->update();
+    }
+    if (gridItem_) {
+        QPen pen = gridItem_->pen();
+        pen.setColor(theme_.gridLines);
+        gridItem_->setPen(pen);
+    }
+    if (boundingBoxItem_) {
+        QPen pen = boundingBoxItem_->pen();
+        pen.setColor(theme_.boundingBox);
+        boundingBoxItem_->setPen(pen);
+    }
+}
+
 void Gui2DWindow::setupSimulationView(QWidget* leftPanel)
 {
     scene_ = new QGraphicsScene(this);
 
-    // Light gray background
-    scene_->setBackgroundBrush(Qt::lightGray);
+    // Background is applied by applySimulationTheme() in the constructor.
 
     // Initial empty scene
     scene_->setSceneRect(0, 0, 800, 600);
@@ -148,6 +205,22 @@ void Gui2DWindow::setupMenus()
     auto* fileMenu = menuBar()->addMenu("File");
     fileMenu->addAction("Load Geometry...", this, &Gui2DWindow::loadGeometry);
     fileMenu->addAction("Save Geometry...", this, &Gui2DWindow::saveGeometry);
+    fileMenu->addSeparator();
+    auto* themeMenu = fileMenu->addMenu("Simulation Theme");
+    auto* themeGroup = new QActionGroup(this);
+    themeGroup->setExclusive(true);
+    for (const auto& option : {std::pair{QStringLiteral("Slate Dark (Default)"), ThemePreset::SlateDark},
+                               std::pair{QStringLiteral("Deep Dark"), ThemePreset::DeepDark},
+                               std::pair{QStringLiteral("Light Grey"), ThemePreset::LightGrey}}) {
+        auto* action = themeMenu->addAction(option.first);
+        action->setCheckable(true);
+        action->setChecked(themePreset_ == option.second);
+        themeGroup->addAction(action);
+        connect(action, &QAction::triggered, this, [this, preset = option.second]() {
+            setSimulationTheme(preset);
+        });
+    }
+
     auto* editMenu = menuBar()->addMenu("Edit");
     editMenu->addAction("Scale Geometry...", this, &Gui2DWindow::scaleGeometry);
     auto* undoAction = editMenu->addAction("Undo", this, &Gui2DWindow::undoGeometry);
@@ -539,8 +612,8 @@ void Gui2DWindow::createBoundingBox()
         boundingBoxItem_ = nullptr;
     }
 
-    // White bounding box outline
-    QPen pen(Qt::white);
+    // Bounding box outline follows the current theme.
+    QPen pen(theme_.boundingBox);
     pen.setWidth(0);
 
     boundingBoxItem_ = scene_->addRect(
@@ -590,7 +663,7 @@ void Gui2DWindow::createBoundingBox()
         gridPath.lineTo(width, y);
     }
 
-    QPen gridPen(QColor(65, 65, 65));
+    QPen gridPen(theme_.gridLines);
     gridPen.setWidth(0);
 
     gridItem_ = scene_->addPath(

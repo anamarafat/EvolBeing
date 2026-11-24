@@ -9,6 +9,7 @@
 #include <QGraphicsLineItem>
 #include <QGraphicsEllipseItem>
 #include <QPointF>
+#include <QColor>
 #include <optional>
 #include <vector>
 #include <functional>
@@ -35,6 +36,23 @@ class Gui2DWindow : public QMainWindow
         explicit Gui2DWindow(QWidget* parent = nullptr);
 
     private:
+        enum class ThemePreset { SlateDark = 0, DeepDark = 1, LightGrey = 2 };
+        struct SimulationTheme {
+            QColor background;
+            QColor activeCell;
+            QColor deadCell;
+            QColor geometryCell;
+            QColor gridLines;
+            QColor wallGeometry;
+            QColor selectedVertex;
+            QColor boundingBox;
+        };
+        ThemePreset themePreset_ = ThemePreset::SlateDark;
+        SimulationTheme theme_{};
+        void applySimulationTheme();
+        void setSimulationTheme(ThemePreset preset);
+        void updateSimulationTheme();
+
         // GUI construction: keep the constructor limited to composition.
         void setupSimulationView(QWidget* leftPanel);
         void setupMenus();

@@ -7,6 +7,7 @@
 #include <stdexcept>
 #include <algorithm>
 #include <utility>
+#include <queue>
 
 namespace geom
 {
@@ -749,14 +750,389 @@ namespace geom
         }
         return errors;
     }
+
+    bool Geometry2D::moveVertex(GeometryVertexID id, double x, double y)
+    {
+        if (!isVertexActive(id) || !std::isfinite(x) || !std::isfinite(y)) return false;
+        vertices_[id].x = x;
+        vertices_[id].y = y;
+        return true;
+    }
 }
 
-namespace geom {
-bool Geometry2D::moveVertex(GeometryVertexID id, double x, double y)
+/* Finalization of Geometry */
+namespace geom 
 {
-    if (!isVertexActive(id) || !std::isfinite(x) || !std::isfinite(y)) return false;
-    vertices_[id].x = x;
-    vertices_[id].y = y;
-    return true;
-}
+    void FinalizedGeometry2D::clear() noexcept
+    {
+        // Remove loops before destroying their half-edges.
+        loopThread_.loops.clear();
+
+        polylineStatus_.clear();
+        eligibleEdgeCount_.clear();
+        endpointPolylines_.clear();
+        
+        // Remove non-owning connectivity.
+        outgoingHalfEdges_.clear();
+        edgePolylines_.clear();
+
+        // Destroy the actual half-edge objects.
+        halfEdges_.clear();
+
+        // Clear previous diagnostics.
+        errors_.clear();
+    }
+
+    void FinalizedGeometry2D::buildHalfEdges(const Geometry2D& geometry)
+    {
+        const auto& vertices = geometry.vertices();
+        const auto& edges = geometry.edges();
+
+        // Reserve storage for the smart pointers.
+        halfEdges_.reserve(2 * edges.size());
+
+        outgoingHalfEdges_.reserve(vertices.size());
+
+        for (const auto& edge : edges)
+        {
+            if (edge.deleted)
+                continue;
+
+            // Retrieve the original geometry vertices.
+            const auto* v0 = &vertices.at(edge.vertex0);
+            const auto* v1 = &vertices.at(edge.vertex1);
+
+            // Allocate two half-edges.
+            auto h0 = std::make_unique<HalfEdge2D>();
+            auto h1 = std::make_unique<HalfEdge2D>();
+
+            // Set the origin vertices.
+            h0->origin = v0;
+            h1->origin = v1;
+
+            // Both half-edges reference the same geometry edge.
+            h0->parentEdge = &edge;
+            h1->parentEdge = &edge;
+
+            // Establish twin connectivity.
+            h0->twin = h1.get();
+            h1->twin = h0.get();
+
+            // Register outgoing half-edges.
+            outgoingHalfEdges_[v0].push_back(h0.get());
+            outgoingHalfEdges_[v1].push_back(h1.get());
+
+            // Transfer ownership to the finalized geometry.
+            halfEdges_.push_back(std::move(h0));
+            halfEdges_.push_back(std::move(h1));
+        }
+    }
+
+    void FinalizedGeometry2D::buildEdgePolylineConnectivity(const Geometry2D& geometry)
+    {
+        const auto& edges = geometry.edges();
+        const auto& polylines = geometry.polylines();
+
+        edgePolylines_.reserve(edges.size());
+
+        for (const auto& polyline : polylines)
+        {
+            if (polyline.deleted)
+                continue;
+
+            for (const auto edgeID : polyline.edges)
+            {
+                const auto& edge = edges.at(edgeID);
+
+                if (edge.deleted)
+                    continue;
+
+                edgePolylines_[&edge].push_back(&polyline);
+            }
+        }
+    }
+
+    bool FinalizedGeometry2D::isEdgeEligible(
+    const GeometryEdge2D* edge) const
+    {
+        const auto edgeIt = edgePolylines_.find(edge);
+
+        /* Check if the edge is associated with any polylines */
+        /* if edge key does not exist the .find would return end() iterator */
+        if (edgeIt == edgePolylines_.end())
+            return false;
+
+        for (const auto* polyline : edgeIt->second)
+        {
+            const auto statusIt =
+                polylineStatus_.find(polyline);
+
+            if (statusIt == polylineStatus_.end())
+                continue;
+
+            if (statusIt->second != PolylineStatus::Open)
+                return true;
+        }
+
+        return false;
+    }
+
+    void FinalizedGeometry2D::initializePolylineClassification(
+                            const Geometry2D& geometry)
+    {
+        const auto& vertices = geometry.vertices();
+        const auto& polylines = geometry.polylines();
+
+        polylineStatus_.clear();
+        eligibleEdgeCount_.clear();
+        endpointPolylines_.clear();
+
+        polylineStatus_.reserve(polylines.size());
+        eligibleEdgeCount_.reserve(vertices.size());
+        endpointPolylines_.reserve(vertices.size());
+
+        // Initialize all valid polylines as candidates.
+        for (const auto& polyline : polylines)
+        {
+            if (polyline.deleted)
+                continue;
+
+            if (polyline.edges.empty())
+            {
+                polylineStatus_[&polyline] =
+                    PolylineStatus::Open;
+
+                continue;
+            }
+
+            polylineStatus_[&polyline] =
+                PolylineStatus::Candidate;
+
+            const auto* startVertex =
+                &vertices.at(polyline.vertices.front());
+
+            const auto* endVertex =
+                &vertices.at(polyline.vertices.back());
+
+            endpointPolylines_[startVertex]
+                .push_back(&polyline);
+
+            if (startVertex != endVertex)
+            {
+                endpointPolylines_[endVertex]
+                    .push_back(&polyline);
+            }
+        }
+
+        // Count eligible physical edges at each vertex.
+        for (const auto& [vertex, outgoing] : outgoingHalfEdges_)
+        {
+            std::size_t count = 0;
+            for (const auto* halfEdge : outgoing)
+            {
+                if (isEdgeEligible(halfEdge->parentEdge))
+                    ++count;
+            }
+            eligibleEdgeCount_[vertex] = count;
+        }
+    }
+
+    bool FinalizedGeometry2D::hasOpenEndpoint(const Polyline2D& polyline,
+                                              const Geometry2D& geometry) const
+    {
+        if (polyline.vertices.empty() ||
+            polyline.edges.empty())
+        {
+            return true;
+        }
+
+        const auto& vertices = geometry.vertices();
+
+        const auto* startVertex =
+            &vertices.at(polyline.vertices.front());
+
+        const auto* endVertex =
+            &vertices.at(polyline.vertices.back());
+
+        // An explicitly closed polyline is not
+        // eliminated by endpoint pruning.
+        if (polyline.closed ||
+            startVertex == endVertex)
+        {
+            return false;
+        }
+
+        const auto startIt =
+            eligibleEdgeCount_.find(startVertex);
+
+        const auto endIt =
+            eligibleEdgeCount_.find(endVertex);
+
+        const std::size_t startCount =
+            startIt != eligibleEdgeCount_.end()
+            ? startIt->second
+            : 0;
+
+        const std::size_t endCount =
+            endIt != eligibleEdgeCount_.end()
+            ? endIt->second
+            : 0;
+
+        return startCount <= 1 || endCount <= 1;
+    }
+
+    void FinalizedGeometry2D::eliminateOpenPolylines(
+    const Geometry2D& geometry)
+    {
+        const auto& vertices = geometry.vertices();
+        const auto& edges = geometry.edges();
+        const auto& polylines = geometry.polylines();
+
+        std::queue<const Polyline2D*> pending;
+
+        // ----------------------------------------
+        // Stage 1: Identify initial open candidates
+        // ----------------------------------------
+
+        for (const auto& polyline : polylines)
+        {
+            if (polyline.deleted)
+                continue;
+
+            if (polylineStatus_.at(&polyline) !=
+                PolylineStatus::Candidate)
+            {
+                continue;
+            }
+
+            if (hasOpenEndpoint(polyline, geometry))
+            {
+                pending.push(&polyline);
+            }
+        }
+
+        // ----------------------------------------
+        // Stage 2: Propagate open classification
+        // ----------------------------------------
+
+        while (!pending.empty())
+        {
+            const auto* polyline = pending.front();
+            pending.pop();
+
+            auto& status = polylineStatus_.at(polyline);
+
+            // The same polyline may have been queued
+            // from more than one neighbouring vertex.
+            if (status != PolylineStatus::Candidate)
+                continue;
+
+            // Collect currently eligible physical edges
+            // belonging to this polyline.
+            std::vector<const GeometryEdge2D*>
+                affectedEdges;
+
+            affectedEdges.reserve(polyline->edges.size());
+
+            for (const auto edgeID : polyline->edges)
+            {
+                const auto* edge = &edges.at(edgeID);
+
+                if (edge->deleted)
+                    continue;
+
+                if (isEdgeEligible(edge))
+                    affectedEdges.push_back(edge);
+            }
+
+            // Exclude the polyline from loop discovery.
+            status = PolylineStatus::Open;
+
+            // Update connectivity for affected edges.
+            for (const auto* edge : affectedEdges)
+            {
+                // Another candidate polyline may still
+                // reference this physical edge.
+                if (isEdgeEligible(edge))
+                    continue;
+
+                const GeometryVertex2D* endpoints[2] =
+                {
+                    &vertices.at(edge->vertex0),
+                    &vertices.at(edge->vertex1)
+                };
+
+                for (const auto* vertex : endpoints)
+                {
+                    auto& count =
+                        eligibleEdgeCount_.at(vertex);
+
+                    if (count == 0)
+                        continue;
+
+                    --count;
+
+                    // Only degree-one vertices require
+                    // further open-polyline propagation.
+                    if (count != 1)
+                        continue;
+
+                    const auto endpointIt =
+                        endpointPolylines_.find(vertex);
+
+                    if (endpointIt ==
+                        endpointPolylines_.end())
+                    {
+                        continue;
+                    }
+
+                    for (const auto* adjacent :
+                        endpointIt->second)
+                    {
+                        if (polylineStatus_.at(adjacent) !=
+                            PolylineStatus::Candidate)
+                        {
+                            continue;
+                        }
+
+                        if (hasOpenEndpoint(
+                                *adjacent, geometry))
+                        {
+                            pending.push(adjacent);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+
+    PolylineStatus FinalizedGeometry2D::polylineStatus(
+        const Polyline2D& polyline) const
+    {
+        return polylineStatus_.at(&polyline);
+    }
+    
+    /* following are few public acces funtions */
+    /* Gui can access the address to the private members without modifying them ENCAPSULATION */
+    const LoopThread2D& FinalizedGeometry2D::loopThread() const noexcept
+    {
+        return loopThread_;
+    }       
+
+    std::size_t FinalizedGeometry2D::halfEdgeCount() const noexcept
+    {
+        return halfEdges_.size();
+    }
+
+    std::size_t FinalizedGeometry2D::loopCount() const noexcept
+    {
+        return loopThread_.loops.size();
+    }
+
+    const std::vector<std::string>& FinalizedGeometry2D::errors() const noexcept
+    {
+        return errors_;
+    }
+
 }

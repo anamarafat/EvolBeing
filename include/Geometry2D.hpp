@@ -6,6 +6,7 @@
 #include <string>
 #include <optional>
 #include <unordered_map>
+#include <memory>
 
 namespace geom
 {
@@ -22,6 +23,13 @@ namespace geom
         Exit,
         Obstacle,
         Region
+    };
+
+    enum class PolylineStatus : std::uint8_t
+    {
+        Candidate,
+        Open,
+        Closed
     };
 
     struct GeometryThread2D
@@ -74,6 +82,50 @@ namespace geom
         std::optional<double> thicknessOverride;
         bool closed = false;
         bool deleted = false; 
+    };
+
+    // ----------------------------------------
+    // Geometry half-edge
+    // ----------------------------------------
+    struct HalfEdge2D
+    {
+        const GeometryVertex2D* origin = nullptr;
+
+        const GeometryEdge2D* parentEdge = nullptr;
+
+        HalfEdge2D* twin = nullptr;
+        HalfEdge2D* next = nullptr;
+
+        bool visited = false;
+    };
+
+    // ----------------------------------------
+    // Closed geometry loop
+    // ----------------------------------------
+    struct GeometryLoop2D
+    {
+        std::string name;
+
+        std::vector<HalfEdge2D*> halfEdges;
+
+        std::vector<const Polyline2D*> polylines;
+
+        double signedArea = 0.0;
+
+        double xmin = 0.0;
+        double ymin = 0.0;
+
+        double xmax = 0.0;
+        double ymax = 0.0;
+    };
+
+    // ----------------------------------------
+    // Geometry loop thread
+    // ----------------------------------------
+    struct LoopThread2D
+    {
+        std::string name = "Loops";
+        std::vector<std::unique_ptr<GeometryLoop2D>> loops;
     };
 
     // ----------------------------------------
@@ -158,4 +210,81 @@ namespace geom
         GeometryThreadID nextThreadID_ = 0;
         void splitPolylineAtEdge(PolylineID id, std::size_t edgePosition);
     };
+
+    // ----------------------------------------
+    // Finalized geometry topology
+    // ----------------------------------------
+    class FinalizedGeometry2D
+    {
+        public:
+
+            FinalizedGeometry2D() = default;
+            FinalizedGeometry2D(
+                const FinalizedGeometry2D&) = delete;
+
+            FinalizedGeometry2D& operator=(
+                const FinalizedGeometry2D&) = delete;
+
+            // Main geometry finalization function
+            bool finalize(const Geometry2D& geometry);
+
+            // Clear finalized topology
+            void clear() noexcept;
+
+            // Read-only access to generated loops
+            const LoopThread2D& loopThread() const noexcept;
+            std::size_t halfEdgeCount() const noexcept;
+            std::size_t loopCount() const noexcept;
+            PolylineStatus polylineStatus(const Polyline2D& polyline) const;
+
+            // Finalization diagnostics
+            const std::vector<std::string>& errors() const noexcept;
+
+            
+
+        private:
+
+            // Half-edge ownership
+            std::vector<std::unique_ptr<HalfEdge2D>> halfEdges_;
+
+            // Outgoing half-edges associated with each vertex
+            std::unordered_map<
+                const GeometryVertex2D*,
+                std::vector<HalfEdge2D*>> 
+                outgoingHalfEdges_;
+
+            // Original edge to contributing polylines
+            std::unordered_map<
+                const GeometryEdge2D*,
+                std::vector<const Polyline2D*>> 
+                edgePolylines_;
+
+            std::unordered_map<const Polyline2D*,PolylineStatus> polylineStatus_;
+            std::unordered_map<const GeometryVertex2D*,std::size_t> eligibleEdgeCount_;
+            std::unordered_map<const GeometryVertex2D*,std::vector<const Polyline2D*>>endpointPolylines_;
+
+            // Ownership of identified loops
+            LoopThread2D loopThread_;
+
+            // Geometry validation errors
+            std::vector<std::string> errors_;
+
+            // Geometry processing functions
+            bool validateGeometry(const Geometry2D& geometry);
+            void buildHalfEdges(const Geometry2D& geometry);
+            void buildEdgePolylineConnectivity(
+                const Geometry2D& geometry);
+            void sortOutgoingHalfEdges();
+            void connectHalfEdges();
+            void extractLoops();
+            void populateLoopPolylines(GeometryLoop2D& loop);
+            void computeLoopProperties(GeometryLoop2D& loop);
+
+            void initializePolylineClassification(const Geometry2D& geometry);
+            void eliminateOpenPolylines(const Geometry2D& geometry);
+            bool hasOpenEndpoint(const Polyline2D& polyline,
+                                 const Geometry2D& geometry) const;
+            bool isEdgeEligible(const GeometryEdge2D* edge) const;
+    };
+    
 }

@@ -64,11 +64,16 @@ class Gui2DWindow : public QMainWindow
         void setupWorkflowPanel(QWidget* central, QHBoxLayout* mainLayout);
         void setupWorkflowTree(QWidget* panel);
         void finalizeGeometryForWorkflow();
+        void invalidateFinalizedGeometry();
+        void refreshGeometryLoopsTree();
+
         bool geometryFinalized_ = false;
         QAction* finalizeGeometryAction_ = nullptr;
         QAction* connectNodesAction_ = nullptr;
         geom::CartesianGrid grid_;
         geom::Geometry2D geometry_;
+        geom::FinalizedGeometry2D finalizedGeometry_;
+
         std::vector<geom::Geometry2D> undoHistory_, redoHistory_;
         void checkpoint();
         void undoGeometry();
@@ -186,6 +191,7 @@ class Gui2DWindow : public QMainWindow
 
         QTreeWidgetItem* geometryRootNode_ = nullptr;
         QTreeWidgetItem* unassignedNode_ = nullptr;
+        QTreeWidgetItem* geometryLoopsNode_ = nullptr;
 
         void refreshGeometryTree();
         void showGeometryProperties();

@@ -66,6 +66,14 @@ class Gui2DWindow : public QMainWindow
         void finalizeGeometryForWorkflow();
         void invalidateFinalizedGeometry();
         void refreshGeometryLoopsTree();
+        void refreshLoopHighlight();
+        void printLoopInfo();
+        std::optional<std::size_t> selectedLoop_;
+        bool allLoopsSelected_ = false;
+        QAction* loopDirectionsAction_ = nullptr;
+        QAction* loopBoundsAction_ = nullptr;
+        QAction* loopNamesAction_ = nullptr;
+        QAction* loopFillAction_ = nullptr;
 
         bool geometryFinalized_ = false;
         QAction* finalizeGeometryAction_ = nullptr;
@@ -75,7 +83,7 @@ class Gui2DWindow : public QMainWindow
         geom::FinalizedGeometry2D finalizedGeometry_;
 
         std::vector<geom::Geometry2D> undoHistory_, redoHistory_;
-        void checkpoint();
+        void checkpoint(bool topologyChanged = true);
         void undoGeometry();
         void redoGeometry();
         void saveGeometry();

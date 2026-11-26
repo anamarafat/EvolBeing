@@ -24,6 +24,7 @@
 #include <QPainter>
 
 #include <QGraphicsPathItem>
+#include <QGraphicsSimpleTextItem>
 #include <QPainterPath>
 #include <QTextEdit>
 #include <QToolBar>
@@ -328,6 +329,17 @@ QToolBar* Gui2DWindow::createAnalyzeToolbar(QWidget* leftPanel)
     infoAction_ = analyzeToolbar->addAction("Info");
     connect(infoAction_, &QAction::triggered,
             this, &Gui2DWindow::printSelectedInfo);
+    auto addLoopOption = [this, analyzeToolbar](const QString& name) {
+        auto* action = analyzeToolbar->addAction(name);
+        action->setCheckable(true);
+        connect(action, &QAction::toggled, this, &Gui2DWindow::refreshLoopHighlight);
+        return action;
+    };
+    loopDirectionsAction_ = addLoopOption("Directions");
+    loopBoundsAction_ = addLoopOption("Loop AABB");
+    loopNamesAction_ = addLoopOption("Loop Names");
+    loopFillAction_ = addLoopOption("Loop Fill");
+    loopDirectionsAction_->setChecked(true);
     return analyzeToolbar;
 }
 
@@ -455,12 +467,25 @@ void Gui2DWindow::setupWorkflowTree(QWidget* panel)
         {
             clearGeometryPartHighlight();
             selectedGeometryPolyline_.reset();
+            selectedGeometryVertex_.reset();
+            selectedGeometryEdge_.reset();
+            selectedLoop_.reset();
+            allLoopsSelected_ = false;
+            clearSelectionHighlight();
 
             if (!current)
                 return;
 
-            if (current->data(0, Qt::UserRole).toString()
-                != "polyline")
+            const auto kind = current->data(0, Qt::UserRole).toString();
+            if (geometryFinalized_ && (kind == "loop" || kind == "loops"))
+            {
+                allLoopsSelected_ = kind == "loops";
+                if (!allLoopsSelected_)
+                    selectedLoop_ = static_cast<std::size_t>(current->data(0, Qt::UserRole + 1).toULongLong());
+                refreshLoopHighlight();
+                return;
+            }
+            if (kind != "polyline" && kind != "loopPolyline")
                 return;
 
             const auto id =
@@ -554,15 +579,141 @@ void Gui2DWindow::setupWorkflowTree(QWidget* panel)
 
 void Gui2DWindow::finalizeGeometryForWorkflow()
 {
-    // GUI-only gate. Geometry validation, loop construction and half-edges
-    // will be added to this function in a later development step.
-    geometryFinalized_ = true;
-    if (computeMeshNode_) {
-        computeMeshNode_->setDisabled(false);
-        computeMeshNode_->setExpanded(true);
+    finishDrawing();
+    invalidateFinalizedGeometry();
+    if (!finalizedGeometry_.finalize(geometry_))
+    {
+        outputText_->append("Finalize Geom failed:");
+        for (const auto& error : finalizedGeometry_.errors())
+            outputText_->append(QString::fromStdString(error).toHtmlEscaped());
+        finalizedGeometry_.clear();
+        return;
     }
-    if (outputText_)
-        outputText_->append("Finalize Geom: Compute Mesh enabled (geometry processing not yet implemented).");
+    geometryFinalized_ = true;
+    refreshGeometryLoopsTree();
+    computeMeshNode_->setDisabled(false);
+    computeMeshNode_->setExpanded(true);
+    outputText_->append(QString("Finalize Geom: %1 loops, %2 half-edges.")
+        .arg(finalizedGeometry_.loopCount()).arg(finalizedGeometry_.halfEdgeCount()));
+}
+
+void Gui2DWindow::invalidateFinalizedGeometry()
+{
+    selectedLoop_.reset();
+    allLoopsSelected_ = false;
+    clearGeometryPartHighlight();
+    clearRegionHighlight();
+    geometryFinalized_ = false;
+    if (geometryLoopsNode_)
+    {
+        delete geometryLoopsNode_;
+        geometryLoopsNode_ = nullptr;
+    }
+    finalizedGeometry_.clear();
+    if (computeMeshNode_)
+        computeMeshNode_->setDisabled(true);
+}
+
+void Gui2DWindow::refreshGeometryLoopsTree()
+{
+    delete geometryLoopsNode_;
+    geometryLoopsNode_ = nullptr;
+    if (!geometryFinalized_ || !geometryRootNode_)
+        return;
+    geometryLoopsNode_ = new QTreeWidgetItem(geometryRootNode_);
+    geometryLoopsNode_->setText(0, QString("Loops (%1)").arg(finalizedGeometry_.loopCount()));
+    geometryLoopsNode_->setData(0, Qt::UserRole, "loops");
+    const auto& loops = finalizedGeometry_.loopThread().loops;
+    for (std::size_t i = 0; i < loops.size(); ++i)
+    {
+        const auto& loop = *loops[i];
+        auto* item = new QTreeWidgetItem(geometryLoopsNode_);
+        item->setText(0, QString::fromStdString(loop.name));
+        item->setData(0, Qt::UserRole, "loop");
+        item->setData(0, Qt::UserRole + 1, QVariant::fromValue(static_cast<qulonglong>(i)));
+        for (const auto* polyline : loop.polylines)
+        {
+            auto* part = new QTreeWidgetItem(item);
+            part->setText(0, QString::fromStdString(polyline->name));
+            part->setData(0, Qt::UserRole, "loopPolyline");
+            part->setData(0, Qt::UserRole + 1, QVariant::fromValue(polyline->id));
+        }
+    }
+    geometryLoopsNode_->setExpanded(true);
+}
+
+void Gui2DWindow::refreshLoopHighlight()
+{
+    if (!geometryFinalized_ || (!selectedLoop_ && !allLoopsSelected_))
+        return;
+    clearGeometryPartHighlight();
+    QPen pen(QColor(255, 210, 0), 4);
+    pen.setCosmetic(true);
+    QPen boundsPen(QColor(230, 140, 40), 1, Qt::DashLine);
+    boundsPen.setCosmetic(true);
+    auto remember = [this](QGraphicsItem* item, double z) {
+        item->setZValue(z);
+        geometryHighlightItems_.push_back(item);
+    };
+    const auto& loops = finalizedGeometry_.loopThread().loops;
+    for (std::size_t i = 0; i < loops.size(); ++i)
+    {
+        if (!allLoopsSelected_ && selectedLoop_ != i)
+            continue;
+        const auto& loop = *loops[i];
+        QPainterPath path;
+        const auto* first = loop.halfEdges.front()->origin;
+        path.moveTo(first->x, first->y);
+        for (const auto* edge : loop.halfEdges)
+        {
+            const auto* a = edge->origin;
+            const auto* b = edge->twin->origin;
+            path.lineTo(b->x, b->y);
+            if (loopDirectionsAction_->isChecked())
+            {
+                const QPointF midpoint((a->x+b->x)*0.5, (a->y+b->y)*0.5);
+                const QPointF sa = view_->viewportTransform().map(QPointF(a->x,a->y));
+                const QPointF sb = view_->viewportTransform().map(QPointF(b->x,b->y));
+                const double angle = std::atan2(sb.y()-sa.y(), sb.x()-sa.x());
+                QPainterPath arrow;
+                arrow.moveTo(-5,-4); arrow.lineTo(2,0); arrow.lineTo(-5,4);
+                auto* marker = scene_->addPath(arrow, pen);
+                marker->setPos(midpoint);
+                marker->setFlag(QGraphicsItem::ItemIgnoresTransformations);
+                marker->setRotation(angle * 180.0 / std::acos(-1.0));
+                remember(marker, 202);
+            }
+        }
+        path.closeSubpath();
+        remember(scene_->addPath(path, pen, loopFillAction_->isChecked()
+            ? QBrush(QColor(255,210,0,35)) : QBrush(Qt::NoBrush)), 200);
+        if (loopBoundsAction_->isChecked())
+            remember(scene_->addRect(loop.xmin, loop.ymin, loop.xmax-loop.xmin,
+                loop.ymax-loop.ymin, boundsPen), 201);
+        if (loopNamesAction_->isChecked())
+        {
+            auto* label = scene_->addSimpleText(QString::fromStdString(loop.name));
+            label->setBrush(QBrush(QColor(255,210,0)));
+            label->setPos(first->x, first->y);
+            label->setFlag(QGraphicsItem::ItemIgnoresTransformations);
+            remember(label, 203);
+        }
+    }
+}
+
+void Gui2DWindow::printLoopInfo()
+{
+    if (!geometryFinalized_) return;
+    const auto& loops = finalizedGeometry_.loopThread().loops;
+    for (std::size_t i = 0; i < loops.size(); ++i)
+    {
+        if (!allLoopsSelected_ && selectedLoop_ != i) continue;
+        const auto& loop = *loops[i];
+        outputText_->append(QString("%1: %2 polylines, %3 edges, area=%4, orientation=CCW; AABB=(%5,%6)-(%7,%8)")
+            .arg(QString::fromStdString(loop.name)).arg(loop.polylines.size())
+            .arg(loop.halfEdges.size()).arg(loop.signedArea,0,'g',15)
+            .arg(loop.xmin).arg(loop.ymin).arg(loop.xmax).arg(loop.ymax));
+    }
 }
 
 // ============================================
@@ -739,6 +890,13 @@ void Gui2DWindow::createBoundingBox()
 
 void Gui2DWindow::handleMeshClick(const QPointF& scenePos)
 {
+    if (selectedLoop_ || allLoopsSelected_)
+    {
+        selectedLoop_.reset();
+        allLoopsSelected_ = false;
+        clearGeometryPartHighlight();
+        workflowTree_->setCurrentItem(nullptr);
+    }
     if (selectionMode_ == SelectionMode::ConnectNodes) {
         connectNodesClick(scenePos);
         return;
@@ -1343,7 +1501,7 @@ void Gui2DWindow::cancelDrawing()
     activeDrawingItems_.clear();
 
     // Roll back the underlying geometry
-    finalizedGeometry_.clear(); geometryFinalized_=false; if(computeMeshNode_) computeMeshNode_->setDisabled(true);
+    invalidateFinalizedGeometry();
     geometry_.discardLastPolyline();
 
     activePolyline_.reset();
@@ -1357,6 +1515,9 @@ void Gui2DWindow::refreshGeometryTree()
     if (!geometryRootNode_)
         return;
 
+    geometryLoopsNode_ = nullptr;
+    selectedLoop_.reset();
+    allLoopsSelected_ = false;
     // Remove previous displayed children.
     while (geometryRootNode_->childCount() > 0)
     {
@@ -1440,6 +1601,7 @@ void Gui2DWindow::refreshGeometryTree()
 
     geometryRootNode_->setExpanded(true);
     unassignedNode_->setExpanded(true);
+    refreshGeometryLoopsTree();
 }
 
 
@@ -1568,13 +1730,13 @@ void Gui2DWindow::renameSelectedGeometry()
 
     if (kind == "group")
     {
-        checkpoint();
+        checkpoint(false);
         geometry_.renameThread(
             id, name.trimmed().toStdString());
     }
     else
     {
-        checkpoint();
+        checkpoint(false);
         geometry_.renamePolyline(
             id, name.trimmed().toStdString());
     }
@@ -1687,7 +1849,7 @@ void Gui2DWindow::showGeometryProperties()
     }
     else
     {
-        checkpoint();
+        checkpoint(false);
         geometry_.renamePolyline(id, name.text().trimmed().toStdString());
         geometry_.setPolylineColorOverride(id,
             inherit.isChecked() ? std::nullopt :
@@ -1715,6 +1877,14 @@ void Gui2DWindow::showGeometryContextMenu(
         return;
 
     QMenu menu(this);
+    const auto itemKind = item->data(0, Qt::UserRole).toString();
+    if (itemKind == "loop" || itemKind == "loops" || itemKind == "loopPolyline")
+    {
+        workflowTree_->setCurrentItem(item);
+        menu.addAction("Info", this, &Gui2DWindow::printSelectedInfo);
+        menu.exec(workflowTree_->viewport()->mapToGlobal(pos));
+        return;
+    }
 
     if (item == regionsNode_) {
         menu.addAction("New Region...", this, &Gui2DWindow::createRegion);
@@ -2180,6 +2350,11 @@ void Gui2DWindow::handleGeometrySelection(const QPointF& pos)
 
 void Gui2DWindow::printSelectedInfo()
 {
+    if (geometryFinalized_ && (selectedLoop_ || allLoopsSelected_))
+    {
+        printLoopInfo();
+        return;
+    }
     if (selectedGeometryVertex_)
     {
         const auto& v = geometry_.vertices().at(*selectedGeometryVertex_);
@@ -2241,11 +2416,9 @@ void Gui2DWindow::deleteSelectedEntity()
     for (const auto& error : errors) outputText_->append(QString::fromStdString(error));
 }
 
-void Gui2DWindow::checkpoint()
+void Gui2DWindow::checkpoint(bool topologyChanged)
 {
-    finalizedGeometry_.clear();
-    geometryFinalized_ = false;
-    if (computeMeshNode_) computeMeshNode_->setDisabled(true);
+    if (topologyChanged) invalidateFinalizedGeometry();
     undoHistory_.push_back(geometry_);
     if (undoHistory_.size() > 80) undoHistory_.erase(undoHistory_.begin());
     redoHistory_.clear();
@@ -2256,7 +2429,7 @@ void Gui2DWindow::undoGeometry()
     if (undoHistory_.empty()) { outputText_->append("Nothing to undo."); return; }
     activePolyline_.reset();
     redoHistory_.push_back(geometry_);
-    finalizedGeometry_.clear(); geometryFinalized_=false; if(computeMeshNode_) computeMeshNode_->setDisabled(true);
+    invalidateFinalizedGeometry();
     geometry_ = std::move(undoHistory_.back()); undoHistory_.pop_back();
     selectedGeometryVertex_.reset(); selectedGeometryEdge_.reset(); selectedGeometryPolyline_.reset();
     redrawGeometry();
@@ -2267,7 +2440,7 @@ void Gui2DWindow::redoGeometry()
     if (redoHistory_.empty()) { outputText_->append("Nothing to redo."); return; }
     activePolyline_.reset();
     undoHistory_.push_back(geometry_);
-    finalizedGeometry_.clear(); geometryFinalized_=false; if(computeMeshNode_) computeMeshNode_->setDisabled(true);
+    invalidateFinalizedGeometry();
     geometry_ = std::move(redoHistory_.back()); redoHistory_.pop_back();
     selectedGeometryVertex_.reset(); selectedGeometryEdge_.reset(); selectedGeometryPolyline_.reset();
     redrawGeometry();

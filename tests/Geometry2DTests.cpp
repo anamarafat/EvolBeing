@@ -11,12 +11,12 @@ int main() {
     for (auto v : {a,b,c,d}) g.appendVertexToPolyline(p,v);
     assert(g.validate().empty());
     auto removedEdge = g.polylines()[p].edges[1];
-    assert(g.deleteEdge(removedEdge));
-    assert(!g.isEdgeActive(removedEdge));
+    assert(g.deleteEdge(removedEdge->id));
+    assert(!g.isEdgeActive(removedEdge->id));
     assert(g.polylines()[p].edges.size() == 1);
     assert(g.polylines().size() == 2);
     assert(g.polylines()[1].edges.size() == 1);
-    assert(g.polylines()[1].threadID == group);
+    assert(g.polylines()[1].thread->id == group);
     assert(g.validate().empty());
     assert(g.deleteVertex(a));
     assert(!g.isVertexActive(a));
@@ -27,7 +27,7 @@ int main() {
     g.closePolyline(q);
     assert(g.validate().empty());
     auto closeEdge = g.polylines()[q].edges.back();
-    assert(g.deleteEdge(closeEdge));
+    assert(g.deleteEdge(closeEdge->id));
     assert(!g.polylines()[q].closed);
     assert(g.validate().empty());
     auto r = g.createPolyline();

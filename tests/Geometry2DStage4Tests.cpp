@@ -18,12 +18,12 @@ int main() {
     assert(a.setPolylineThicknessOverride(p,std::nullopt));
     assert(a.effectivePolylineThickness(p)==3.5);
     geom::Geometry2D b;
-    assert(b.importState(a.vertices(),a.edges(),a.polylines(),a.threads()));
+    assert(b.importState(a.vertexRecords(),a.edgeRecords(),a.polylineRecords(),a.threadRecords()));
     assert(b.threads().at(0).name=="Walls");
     assert(b.effectivePolylineThickness(p)==3.5);
-    assert(b.polylines().at(p).edges==a.polylines().at(p).edges);
-    auto badEdges=a.edges();badEdges.at(0).vertex0=9999;
-    assert(!b.importState(a.vertices(),badEdges,a.polylines(),a.threads()));
+    assert(b.polylineRecords().at(p).edges==a.polylineRecords().at(p).edges);
+    auto badEdges=a.edgeRecords();badEdges.at(0).vertex0=9999;
+    assert(!b.importState(a.vertexRecords(),badEdges,a.polylineRecords(),a.threadRecords()));
     assert(b.polylines().size()==1); // failed import preserves prior state
     std::cout << "Stage4 core tests passed\n";
 }

@@ -30,6 +30,7 @@ C:/Dev/EvolBeing/EvolBeing_Gen_alpha/build-qt/CMakeFiles/ContinuousMemCheck.dir
 C:/Dev/EvolBeing/EvolBeing_Gen_alpha/build-qt/CMakeFiles/ContinuousSubmit.dir
 C:/Dev/EvolBeing/EvolBeing_Gen_alpha/build-qt/CMakeFiles/Geometry2DTests.dir
 C:/Dev/EvolBeing/EvolBeing_Gen_alpha/build-qt/CMakeFiles/Geometry2DStage4Tests.dir
+C:/Dev/EvolBeing/EvolBeing_Gen_alpha/build-qt/CMakeFiles/Geometry2DPointerTests.dir
 C:/Dev/EvolBeing/EvolBeing_Gen_alpha/build-qt/CMakeFiles/test.dir
 C:/Dev/EvolBeing/EvolBeing_Gen_alpha/build-qt/CMakeFiles/edit_cache.dir
 C:/Dev/EvolBeing/EvolBeing_Gen_alpha/build-qt/CMakeFiles/rebuild_cache.dir

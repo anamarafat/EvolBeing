@@ -1145,8 +1145,7 @@ void Gui2DWindow::handleDrawingClick(
 
         if (!polyline.vertices.empty())
         {
-            const auto& last = geometry_.vertices().at(
-                polyline.vertices.back());
+            const auto& last = *polyline.vertices.back();
 
             if (QLineF(QPointF(last.x, last.y), scenePos)
                     .length() < 1e-9)
@@ -1194,7 +1193,7 @@ void Gui2DWindow::handleDrawingClick(
             polyline.vertices[polyline.vertices.size() - 2];
 
         const auto& previous =
-            geometry_.vertices().at(previousID);
+            *previousID;
 
         QPen edgePen(QColor(220, 40, 40));
         edgePen.setWidth(2);
@@ -1238,7 +1237,7 @@ void Gui2DWindow::handleDrawingMove(
         return;
 
     const auto lastID = polyline.vertices.back();
-    const auto& last = geometry_.vertices().at(lastID);
+    const auto& last = *lastID;
 
     QPen previewPen(QColor(255, 160, 0));
     previewPen.setWidth(2);
@@ -1344,6 +1343,7 @@ void Gui2DWindow::cancelDrawing()
     activeDrawingItems_.clear();
 
     // Roll back the underlying geometry
+    finalizedGeometry_.clear(); geometryFinalized_=false; if(computeMeshNode_) computeMeshNode_->setDisabled(true);
     geometry_.discardLastPolyline();
 
     activePolyline_.reset();
@@ -1385,10 +1385,10 @@ void Gui2DWindow::refreshGeometryTree()
             QVariant::fromValue(thread.id));
 
         // Add the thread's polylines.
-        for (const auto polylineID : thread.polylines)
+        for (const auto* member : thread.polylines)
         {
             const auto& polyline =
-                geometry_.polylines().at(polylineID);
+                *member;
 
             if (polyline.deleted)
                 continue;
@@ -1404,7 +1404,7 @@ void Gui2DWindow::refreshGeometryTree()
 
             partNode->setData(
                 0, Qt::UserRole + 1,
-                QVariant::fromValue(polylineID));
+                QVariant::fromValue(polyline.id));
         }
 
         groupNode->setExpanded(true);
@@ -1416,7 +1416,7 @@ void Gui2DWindow::refreshGeometryTree()
         if (polyline.deleted)
             continue;
 
-        if (polyline.threadID)
+        if (polyline.thread)
             continue;
 
         // Do not show an unfinished drawing.
@@ -1835,13 +1835,13 @@ void Gui2DWindow::highlightGeometryPart(
     for (const auto edgeID : polyline.edges)
     {
         const auto& edge =
-            geometry_.edges().at(edgeID);
+            *edgeID;
 
         const auto& a =
-            geometry_.vertices().at(edge.vertex0);
+            *edge.vertex0;
 
         const auto& b =
-            geometry_.vertices().at(edge.vertex1);
+            *edge.vertex1;
 
         auto* line = scene_->addLine(
             a.x, a.y, b.x, b.y, edgePen);
@@ -1854,7 +1854,7 @@ void Gui2DWindow::highlightGeometryPart(
     for (const auto vertexID : polyline.vertices)
     {
         const auto& vertex =
-            geometry_.vertices().at(vertexID);
+            *vertexID;
 
         auto* marker = scene_->addEllipse(
             -5, -5, 10, 10,
@@ -1989,10 +1989,10 @@ void Gui2DWindow::applySnap()
     else if (selectedGeometryEdge_ && geometry_.isEdgeActive(*selectedGeometryEdge_))
     {
         const auto& e = geometry_.edges().at(*selectedGeometryEdge_);
-        ids = {e.vertex0, e.vertex1};
+        ids = {e.vertex0->id, e.vertex1->id};
     }
     else if (selectedGeometryPolyline_ && *selectedGeometryPolyline_ < geometry_.polylines().size())
-        ids = geometry_.polylines().at(*selectedGeometryPolyline_).vertices;
+        { for (auto* v : geometry_.polylines().at(*selectedGeometryPolyline_).vertices) ids.push_back(v->id); }
     else
     {
         outputText_->append("Snap: select a geometry vertex, edge or polyline, or enable Snap All.");
@@ -2016,7 +2016,7 @@ void Gui2DWindow::applySnap()
     for (const auto& e : geometry_.edges())
     {
         if (e.deleted) continue;
-        const QPointF a = proposed(e.vertex0), b = proposed(e.vertex1);
+        const QPointF a = proposed(e.vertex0->id), b = proposed(e.vertex1->id);
         if (QLineF(a, b).length() < 1e-9)
         {
             outputText_->append(QString("Snap cancelled: edge %1 would collapse.").arg(e.id));
@@ -2042,8 +2042,8 @@ void Gui2DWindow::closeActivePolyline()
     {
         if (poly.vertices.size() < 3)
         { outputText_->append("Closure needs at least three vertices."); return; }
-        const auto& a = geometry_.vertices().at(poly.vertices.front());
-        const auto& b = geometry_.vertices().at(poly.vertices.back());
+        const auto& a = *poly.vertices.front();
+        const auto& b = *poly.vertices.back();
         if (QLineF(QPointF(a.x,a.y), QPointF(b.x,b.y)).length() < 1e-9)
         { outputText_->append("Cannot close: endpoints coincide."); return; }
         checkpoint();
@@ -2088,10 +2088,10 @@ void Gui2DWindow::redrawGeometry()
         if (poly.deleted) continue;
         for (auto id : poly.edges)
         {
-            if (!geometry_.isEdgeActive(id)) continue;
-            const auto& e = geometry_.edges().at(id);
-            const auto& a = geometry_.vertices().at(e.vertex0);
-            const auto& b = geometry_.vertices().at(e.vertex1);
+            if (id->deleted) continue;
+            const auto& e = *id;
+            const auto& a = *e.vertex0;
+            const auto& b = *e.vertex1;
             QPen polyPen(edgePen);
             polyPen.setColor(QColor::fromRgb(geometry_.effectivePolylineColor(poly.id)));
             polyPen.setWidthF(2.0 * geometry_.effectivePolylineThickness(poly.id));
@@ -2100,8 +2100,9 @@ void Gui2DWindow::redrawGeometry()
             geometryItems_.push_back(line);
             polylineGraphics_[poly.id].push_back(line);
         }
-        for (auto id : poly.vertices)
+        for (auto* vertex : poly.vertices)
         {
+            const auto id = vertex->id;
             if (drawn.contains(id)) continue;
             drawn.insert(id);
             auto* item = drawVertex(id);
@@ -2136,8 +2137,8 @@ void Gui2DWindow::handleGeometrySelection(const QPointF& pos)
         for (const auto& e : geometry_.edges())
         {
             if (e.deleted) continue;
-            const auto& a = geometry_.vertices().at(e.vertex0);
-            const auto& b = geometry_.vertices().at(e.vertex1);
+            const auto& a = *e.vertex0;
+            const auto& b = *e.vertex1;
             const QPointF p = view_->mapFromScene(QPointF(a.x,a.y));
             const QPointF q = view_->mapFromScene(QPointF(b.x,b.y));
             const QPointF d = q-p;
@@ -2151,7 +2152,7 @@ void Gui2DWindow::handleGeometrySelection(const QPointF& pos)
         {
             const auto eid = *selectedGeometryEdge_;
             for (const auto& poly : geometry_.polylines())
-                if (!poly.deleted && std::find(poly.edges.begin(),poly.edges.end(),eid)!=poly.edges.end())
+                if (!poly.deleted && std::find(poly.edges.begin(),poly.edges.end(),&geometry_.edges().at(eid))!=poly.edges.end())
                 { selectedGeometryPolyline_ = poly.id; break; }
             selectedGeometryEdge_.reset();
         }
@@ -2168,8 +2169,8 @@ void Gui2DWindow::handleGeometrySelection(const QPointF& pos)
     else if (selectedGeometryEdge_)
     {
         const auto& e = geometry_.edges().at(*selectedGeometryEdge_);
-        const auto& a = geometry_.vertices().at(e.vertex0);
-        const auto& b = geometry_.vertices().at(e.vertex1);
+        const auto& a = *e.vertex0;
+        const auto& b = *e.vertex1;
         QPen pen(Qt::yellow); pen.setWidth(5); pen.setCosmetic(true);
         auto* item = scene_->addLine(a.x,a.y,b.x,b.y,pen);
         item->setZValue(201); geometryHighlightItems_.push_back(item);
@@ -2187,25 +2188,25 @@ void Gui2DWindow::printSelectedInfo()
     else if (selectedGeometryEdge_)
     {
         const auto& e = geometry_.edges().at(*selectedGeometryEdge_);
-        const auto& a = geometry_.vertices().at(e.vertex0);
-        const auto& b = geometry_.vertices().at(e.vertex1);
+        const auto& a = *e.vertex0;
+        const auto& b = *e.vertex1;
         outputText_->append(QString("Geometry edge %1: vertices %2-%3, length %4")
-            .arg(e.id).arg(e.vertex0).arg(e.vertex1).arg(QLineF(QPointF(a.x,a.y),QPointF(b.x,b.y)).length()));
+            .arg(e.id).arg(e.vertex0->id).arg(e.vertex1->id).arg(QLineF(QPointF(a.x,a.y),QPointF(b.x,b.y)).length()));
     }
     else if (selectedGeometryPolyline_)
     {
         const auto& p = geometry_.polylines().at(*selectedGeometryPolyline_);
         double length = 0;
-        for (auto eid : p.edges) if (geometry_.isEdgeActive(eid))
+        for (auto eid : p.edges) if (!eid->deleted)
         {
-            const auto& e = geometry_.edges().at(eid);
-            const auto& a = geometry_.vertices().at(e.vertex0);
-            const auto& b = geometry_.vertices().at(e.vertex1);
+            const auto& e = *eid;
+            const auto& a = *e.vertex0;
+            const auto& b = *e.vertex1;
             length += QLineF(QPointF(a.x,a.y),QPointF(b.x,b.y)).length();
         }
         outputText_->append(QString("Polyline %1: %2 vertices, %3 edges, length %4, closed=%5, group=%6")
             .arg(p.id).arg(p.vertices.size()).arg(p.edges.size()).arg(length)
-            .arg(p.closed ? "yes":"no").arg(p.threadID ? QString::number(*p.threadID):"unassigned"));
+            .arg(p.closed ? "yes":"no").arg(p.thread ? QString::number(p.thread->id):"unassigned"));
     }
     else if (selectedNode_)
         outputText_->append(QString("Mesh node %1: (%2,%3), faces=%4, flags=%5")
@@ -2242,6 +2243,9 @@ void Gui2DWindow::deleteSelectedEntity()
 
 void Gui2DWindow::checkpoint()
 {
+    finalizedGeometry_.clear();
+    geometryFinalized_ = false;
+    if (computeMeshNode_) computeMeshNode_->setDisabled(true);
     undoHistory_.push_back(geometry_);
     if (undoHistory_.size() > 80) undoHistory_.erase(undoHistory_.begin());
     redoHistory_.clear();
@@ -2252,6 +2256,7 @@ void Gui2DWindow::undoGeometry()
     if (undoHistory_.empty()) { outputText_->append("Nothing to undo."); return; }
     activePolyline_.reset();
     redoHistory_.push_back(geometry_);
+    finalizedGeometry_.clear(); geometryFinalized_=false; if(computeMeshNode_) computeMeshNode_->setDisabled(true);
     geometry_ = std::move(undoHistory_.back()); undoHistory_.pop_back();
     selectedGeometryVertex_.reset(); selectedGeometryEdge_.reset(); selectedGeometryPolyline_.reset();
     redrawGeometry();
@@ -2262,6 +2267,7 @@ void Gui2DWindow::redoGeometry()
     if (redoHistory_.empty()) { outputText_->append("Nothing to redo."); return; }
     activePolyline_.reset();
     undoHistory_.push_back(geometry_);
+    finalizedGeometry_.clear(); geometryFinalized_=false; if(computeMeshNode_) computeMeshNode_->setDisabled(true);
     geometry_ = std::move(redoHistory_.back()); redoHistory_.pop_back();
     selectedGeometryVertex_.reset(); selectedGeometryEdge_.reset(); selectedGeometryPolyline_.reset();
     redrawGeometry();
@@ -2280,18 +2286,18 @@ void Gui2DWindow::saveGeometry()
         QJsonObject o; o["id"] = int(v.id); o["x"] = v.x; o["y"] = v.y; o["deleted"] = v.deleted;
         vertices.append(o);
     }
-    for (const auto& e : geometry_.edges()) {
+    for (const auto& e : geometry_.edgeRecords()) {
         QJsonObject o; o["id"] = int(e.id); o["vertex0"] = int(e.vertex0);
         o["vertex1"] = int(e.vertex1); o["deleted"] = e.deleted; edges.append(o);
     }
-    for (const auto& g : geometry_.threads()) {
+    for (const auto& g : geometry_.threadRecords()) {
         QJsonObject o; o["id"] = double(g.id); o["name"] = QString::fromStdString(g.name);
         o["type"] = int(g.type); o["active"] = g.active;
         o["colorRGB"] = double(g.colorRGB); o["thickness"] = g.thickness;
         QJsonArray members; for (auto id : g.polylines) members.append(double(id));
         o["polylines"] = members; groups.append(o);
     }
-    for (const auto& p : geometry_.polylines()) {
+    for (const auto& p : geometry_.polylineRecords()) {
         QJsonObject o; o["id"] = double(p.id); o["name"] = QString::fromStdString(p.name);
         o["closed"] = p.closed; o["deleted"] = p.deleted;
         o["threadID"] = p.threadID ? QJsonValue(double(*p.threadID)) : QJsonValue(QJsonValue::Null);
@@ -2347,9 +2353,9 @@ void Gui2DWindow::loadGeometry()
             return ids;
         };
         std::vector<geom::GeometryVertex2D> vertices;
-        std::vector<geom::GeometryEdge2D> edges;
-        std::vector<geom::Polyline2D> polylines;
-        std::vector<geom::GeometryThread2D> groups;
+        std::vector<geom::GeometryEdgeRecord> edges;
+        std::vector<geom::PolylineRecord> polylines;
+        std::vector<geom::GeometryThreadRecord> groups;
         for (const auto& value : requireArray(root,"vertices")) {
             if (!value.isObject()) throw std::runtime_error("Invalid vertex");
             auto o=value.toObject(); geom::GeometryVertex2D v;
@@ -2359,14 +2365,14 @@ void Gui2DWindow::loadGeometry()
         }
         for (const auto& value : requireArray(root,"edges")) {
             if (!value.isObject()) throw std::runtime_error("Invalid edge");
-            auto o=value.toObject(); geom::GeometryEdge2D e;
+            auto o=value.toObject(); geom::GeometryEdgeRecord e;
             e.id=integer(o,"id"); e.vertex0=integer(o,"vertex0"); e.vertex1=integer(o,"vertex1");
             if (!o.value("deleted").isBool()) throw std::runtime_error("Invalid edge deletion state");
             e.deleted=o.value("deleted").toBool(); edges.push_back(e);
         }
         for (const auto& value : requireArray(root,"groups")) {
             if (!value.isObject()) throw std::runtime_error("Invalid group");
-            auto o=value.toObject(); geom::GeometryThread2D g;
+            auto o=value.toObject(); geom::GeometryThreadRecord g;
             g.id=integer(o,"id"); g.colorRGB=integer(o,"colorRGB");
             if (!o.value("name").isString() || !o.value("active").isBool() || !o.value("thickness").isDouble()) throw std::runtime_error("Invalid group fields");
             g.name=o.value("name").toString().toStdString(); g.active=o.value("active").toBool();
@@ -2375,7 +2381,7 @@ void Gui2DWindow::loadGeometry()
         }
         for (const auto& value : requireArray(root,"polylines")) {
             if (!value.isObject()) throw std::runtime_error("Invalid polyline");
-            auto o=value.toObject(); geom::Polyline2D p;
+            auto o=value.toObject(); geom::PolylineRecord p;
             p.id=integer(o,"id");
             if (!o.value("name").isString() || !o.value("closed").isBool() || !o.value("deleted").isBool()) throw std::runtime_error("Invalid polyline fields");
             p.name=o.value("name").toString().toStdString(); p.closed=o.value("closed").toBool(); p.deleted=o.value("deleted").toBool();
@@ -2454,7 +2460,7 @@ void Gui2DWindow::connectNodesClick(const QPointF& pos)
     const auto first=*connectStart_; connectStart_.reset();
     if (first==*chosen) { outputText_->append("Connect Nodes: select two different nodes."); return; }
     for (const auto& e : geometry_.edges()) if (!e.deleted &&
-        ((e.vertex0==first && e.vertex1==*chosen)||(e.vertex1==first && e.vertex0==*chosen))) {
+        ((e.vertex0->id==first && e.vertex1->id==*chosen)||(e.vertex1->id==first && e.vertex0->id==*chosen))) {
         outputText_->append("Connect Nodes: edge already exists."); return;
     }
     checkpoint();
